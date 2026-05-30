@@ -11,6 +11,8 @@
 
 __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWidth, int screenHeight, Vertice3 cameraPos, const TriangleSoA triangleSoA, BVHNode* gpuNodes, int* gpuTriIndices, int nodeCount, Vertice3 cameraForward, Vertice3 cameraRight, Vertice3 cameraUp);
 
+__device__ static bool HitsBVH(const BVHNode* gpuNodes, const int* gpuTriIndices, const TriangleSoA triangleSoA, Vertice3 cameraPos, Vertice3 invDir, Vertice3 dir, float maxDistance);
+
 __device__ static void TraverseBVH(const BVHNode* gpuNodes, const int* gpuTriIndices, const TriangleSoA triangleSoA, Vertice3 cameraPos, Vertice3 invDir, Vertice3 dir, float& closestDistance, int& closestTriangleIndex, float& outu, float& outv);
 
 __host__ void LaunchRender(Uint32* framebuffer, int numTriangles, int screenWidth, int screenHeight, Vertice3 cameraPos, const TriangleSoA triangleSoA, BVHNode* gpuNodes, int* gpuTriIndices, int nodeCount, Vertice3 cameraForward, Vertice3 cameraRight, Vertice3 cameraUp)
@@ -33,7 +35,7 @@ __host__ void LaunchRender(Uint32* framebuffer, int numTriangles, int screenWidt
 /// <param name="tri"></param>
 /// <param name="outIntersectionPoint"></param>
 /// <returns></returns>
-__device__ inline bool RayIntersectsTriangle(Vertice3 rayOrigin, Vertice3 rayDirection, float& outIntersectionPoint, float& u, float& v, const TriangleSoA triangleSoA, int triangleIndex)
+__device__ __forceinline__ bool RayIntersectsTriangle(Vertice3 rayOrigin, Vertice3 rayDirection, float& outIntersectionPoint, float& u, float& v, const TriangleSoA triangleSoA, int triangleIndex)
 {
 	float E1x = triangleSoA.E1x[triangleIndex];
 	float E1y = triangleSoA.E1y[triangleIndex];
@@ -87,7 +89,7 @@ __device__ inline bool RayIntersectsTriangle(Vertice3 rayOrigin, Vertice3 rayDir
 	return false;
 }
 
-__device__ inline bool HitAABB(Vertice3 rayOrigin, Vertice3 rayDir, AABB box, float& tmin)
+__device__ __forceinline__ bool HitAABB(Vertice3 rayOrigin, Vertice3 rayDir, AABB box, float& tmin)
 {
 	float tx1 = (box.min.x - rayOrigin.x) * rayDir.x;
 	float tx2 = (box.max.x - rayOrigin.x) * rayDir.x;
@@ -140,8 +142,8 @@ __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWid
 
 	Vertice3 invDir = Vertice3(1.0f / dir.x, 1.0f / dir.y, 1.0f / dir.z);
 
-	int triangleTests = 0;
-	int aabbcount = 0;
+	//int triangleTests = 0;
+	//int aabbcount = 0;
 
 	float outu, outv;
 
@@ -150,7 +152,7 @@ __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWid
 
 
 
-
+	// if hit , then shoot shadow ray
 	if (closestTriangleIndex != -1)
 	{
 
@@ -170,51 +172,49 @@ __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWid
 			triangleSoA.N0z[closestTriangleIndex] * w +
 			triangleSoA.N1z[closestTriangleIndex] * outu +
 			triangleSoA.N2z[closestTriangleIndex] * outv;
-		Vertice3 normal = Vertice3(normalx, normaly, normalz);
-			
-		normal.NormalizeValue();
-			PointLight light;
-		light.position = Vertice3(6, 2, -1);
+
+
+		float invLength = rsqrtf(normalx * normalx + normaly * normaly + normalz * normalz);
+
+		normalx *= invLength;
+		normaly *= invLength;
+		normalz *= invLength;
+
+
+		PointLight light;
+		light.position = Vertice3(6, 20, -1);
 		light.color = Vertice3(1, 1, 1);
-		light.intensity = 4.0f;
+		light.intensity = 100.0f;
 		Vertice3 hitPoint = cameraPos + dir * closestDistance;
 		Vertice3 lightDir = light.position - hitPoint;
-			lightDir.NormalizeValue();
+		lightDir.NormalizeValue();
 
-			int shadowRayHit = -1;
-			float outShadowu, outShadowv;
 
-			Vertice3 shadowOrigin =
-				hitPoint + normal * 0.001f;
 
-		closestDistance = FLT_MAX;
+		Vertice3 shadowOrigin =
+			Vertice3(hitPoint.x + normalx * 0.001f, hitPoint.y + normaly * 0.001f, hitPoint.z + normalz * 0.001f);
+
 
 		float lightDistance =
 			sqrtf(light.position.DistanceSquared(hitPoint));
 
 		Vertice3 shadowRayDirInv = lightDir.Reciprocal();
-		TraverseBVH(gpuNodes, gpuTriIndices, triangleSoA, shadowOrigin, shadowRayDirInv, lightDir, closestDistance, shadowRayHit, outShadowu, outShadowv);
+		bool shadowed = HitsBVH(gpuNodes, gpuTriIndices, triangleSoA, shadowOrigin, shadowRayDirInv, lightDir, lightDistance);
 
-		if (shadowRayHit != -1 &&
-			closestDistance < lightDistance)
+		if (shadowed )
 		{
 			framebuffer[y * (int)screenWidth + x] = 0x030303FF;
 			//framebuffer[y * screenWidth + x] = 0xFF0000FF;
 		}
 		else
 		{
-		
 
 
 
 
 
 
-			float invLength = rsqrtf(normalx * normalx + normaly * normaly + normalz * normalz);
 
-			normalx *= invLength;
-			normaly *= invLength;
-			normalz *= invLength;
 
 
 
@@ -357,4 +357,97 @@ __device__ static void TraverseBVH(const BVHNode* gpuNodes, const int* gpuTriInd
 
 		}
 	}
+}
+__device__ static bool HitsBVH(const BVHNode* gpuNodes, const int* gpuTriIndices, const TriangleSoA triangleSoA, Vertice3 rayStart, Vertice3 inverseDir, Vertice3 dir, float maxDistance)
+{
+
+	StackEntry stack[64];
+	int stackPtr = 0;
+	int nodeIndex = 0;
+	float nodeNear = 0;
+
+	float uu, vv;
+	stack[stackPtr++] = { 0, 0.0f };
+
+	while (stackPtr > 0)
+	{
+
+		StackEntry entry = stack[--stackPtr];
+
+		nodeIndex = entry.nodeIndex;
+		nodeNear = entry.nearT;
+
+		BVHNode node = gpuNodes[nodeIndex];
+
+		if (nodeNear > maxDistance)
+			continue;
+		if (node.triCount == 0)
+		{
+			int leftChild = node.leftFirst;
+			int rightChild = node.leftFirst + 1;
+
+			float leftNear;
+			float rightNear;
+
+			bool hitLeft =
+				HitAABB(rayStart,
+					inverseDir,
+					gpuNodes[leftChild].aabb,
+					leftNear);
+			//aabbcount++;
+			bool hitRight =
+				HitAABB(rayStart,
+					inverseDir,
+					gpuNodes[rightChild].aabb,
+					rightNear);
+			//aabbcount++;
+			if (hitLeft && hitRight)
+			{
+				if (leftNear < rightNear)
+				{
+					stack[stackPtr++] = { rightChild, rightNear };
+					stack[stackPtr++] = { leftChild, leftNear };
+				}
+				else
+				{
+					stack[stackPtr++] = { leftChild, leftNear };
+					stack[stackPtr++] = { rightChild, rightNear };
+				}
+			}
+			else if (hitLeft)
+			{
+				if (leftNear <= maxDistance)
+					stack[stackPtr++] = { leftChild, leftNear };
+			}
+			else if (hitRight)
+			{
+				if (rightNear <= maxDistance)
+					stack[stackPtr++] = { rightChild, rightNear };
+			}
+		}
+		else
+		{
+			float intersectionPoint = 0.0f;
+			for (int i = 0; i < node.triCount; i++)
+			{
+				int triIndex =
+					gpuTriIndices[node.leftFirst + i];
+
+				if ((RayIntersectsTriangle(rayStart, dir, intersectionPoint, uu, vv, triangleSoA, triIndex)))
+				{
+					if (intersectionPoint < maxDistance)
+					{
+
+						return true;
+						//outu = uu;
+						//outv = vv;
+						//closestDistance = intersectionPoint;
+						//closestTriangleIndex = triIndex;
+					}
+				}
+			}
+
+		}
+	}
+	return false;
 }

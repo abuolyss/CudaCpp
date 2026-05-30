@@ -16,12 +16,12 @@ struct BVHNode
 {
 	AABB aabb;
 
+	int triCount;
 	// if tri count >0 then leaf node leftfirst = which triangle
 	// else
 	// leftfirst = leftchild
 	// leftfirst+1 = right child 
 	int leftFirst;
-	int triCount;
 };
 
 
