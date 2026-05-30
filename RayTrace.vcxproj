@@ -162,6 +162,7 @@
     <ClInclude Include="Gpu.h" />
     <ClInclude Include="lights.h" />
     <ClInclude Include="objImport.h" />
+    <ClInclude Include="SDLmanager.h" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="Gpu.cu">

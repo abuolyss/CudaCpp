@@ -6,6 +6,7 @@
 #include <math.h>
 
 
+
 struct Vertice3
 {
 	//coords for vector or vertices
@@ -68,6 +69,15 @@ struct Vertice3
 			y * other.z - z * other.y,
 			z * other.x - x * other.z,
 			x * other.y - y * other.x
+		);
+	}
+
+	__host__ __device__ inline Vertice3 Reciprocal() const
+	{
+		return Vertice3(
+			1.0f / x,
+			1.0f / y,
+			1.0f / z
 		);
 	}
 	//is this vector further from another vector

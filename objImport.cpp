@@ -12,7 +12,7 @@ void ReadObjFile( std::vector<Triangle>& triangles, Uint8 red, Uint8 green, Uint
 {
 	std::cout << "Starting the read of .Obj file." << std::endl;
 
-	std::ifstream Read("countach.obj");
+	std::ifstream Read("carwithpole.obj");
 
 	if (!Read.is_open())
 	{

@@ -44,6 +44,9 @@
     <ClInclude Include="lights.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="SDLmanager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="Gpu.cu">
