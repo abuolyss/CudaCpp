@@ -149,6 +149,10 @@
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
     </Manifest>
+    <CudaCompile>
+      <CudaRuntime>Static</CudaRuntime>
+      <GenerateLineInfo>true</GenerateLineInfo>
+    </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="IDEAS.cpp" />

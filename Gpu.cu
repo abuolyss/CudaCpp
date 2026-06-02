@@ -17,7 +17,7 @@ __device__ static void TraverseBVH(const BVHNode* gpuNodes, const int* gpuTriInd
 
 __host__ void LaunchRender(Uint32* framebuffer, int numTriangles, int screenWidth, int screenHeight, Vertice3 cameraPos, const TriangleSoA triangleSoA, BVHNode* gpuNodes, int* gpuTriIndices, int nodeCount, Vertice3 cameraForward, Vertice3 cameraRight, Vertice3 cameraUp)
 {
-	dim3 blockSize(16, 16);
+	dim3 blockSize(8, 8);
 	dim3 gridSize(
 		(screenWidth + blockSize.x - 1) / blockSize.x,
 		(screenHeight + blockSize.y - 1) / blockSize.y
@@ -271,7 +271,7 @@ __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWid
 __device__ static void TraverseBVH(const BVHNode* gpuNodes, const int* gpuTriIndices, const TriangleSoA triangleSoA, Vertice3 cameraPos, Vertice3 invDir, Vertice3 dir, float& closestDistance, int& closestTriangleIndex, float& outu, float& outv)
 {
 
-	StackEntry stack[64];
+	StackEntry stack[20];
 	int stackPtr = 0;
 	int nodeIndex = 0;
 	float nodeNear = 0;
@@ -287,7 +287,7 @@ __device__ static void TraverseBVH(const BVHNode* gpuNodes, const int* gpuTriInd
 		nodeIndex = entry.nodeIndex;
 		nodeNear = entry.nearT;
 
-		BVHNode node = gpuNodes[nodeIndex];
+		const BVHNode& node = gpuNodes[nodeIndex];
 
 		if (nodeNear > closestDistance)
 			continue;
@@ -361,7 +361,7 @@ __device__ static void TraverseBVH(const BVHNode* gpuNodes, const int* gpuTriInd
 __device__ static bool HitsBVH(const BVHNode* gpuNodes, const int* gpuTriIndices, const TriangleSoA triangleSoA, Vertice3 rayStart, Vertice3 inverseDir, Vertice3 dir, float maxDistance)
 {
 
-	StackEntry stack[64];
+	StackEntry stack[20];
 	int stackPtr = 0;
 	int nodeIndex = 0;
 	float nodeNear = 0;

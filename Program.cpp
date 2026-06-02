@@ -9,6 +9,7 @@
 #include <SDL3/SDL_mouse.h>
 #include "BVH.h"
 #include "SDLmanager.cpp"
+#include <windows.h>
 
 static void ConvertTriangles(const std::vector<Triangle>& triangles, TriangleSoA& triangleSoA);
 
@@ -78,7 +79,8 @@ int main()
 
 	//std::cout << triangles.size() << std::endl;
 	//std::cout << nodes.size() << std::endl;
-
+	std::cout << "Waiting for profiler..." << std::endl;
+	Sleep(2000);
 
 	std::cout << "Starting the game loop." << std::endl;
 
