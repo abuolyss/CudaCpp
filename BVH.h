@@ -4,6 +4,8 @@
 #include "structs.h"
 #include <algorithm>
 #include <vector>
+#include <iostream>
+
 
 
 struct AABB
@@ -16,12 +18,8 @@ struct BVHNode
 {
 	AABB aabb;
 
-	int triCount;
-	// if tri count >0 then leaf node leftfirst = which triangle
-	// else
-	// leftfirst = leftchild
-	// leftfirst+1 = right child 
-	int leftFirst;
+	int triCount = 0;
+	int leftFirst = 0;
 };
 
 struct TriangleBuildData
@@ -30,7 +28,192 @@ struct TriangleBuildData
 	AABB bounds;
 };
 
+constexpr int BINAABB_COUNT = 16;
 
+struct Bin
+{
+	AABB bounds;
+	int count = 0;
+};
+
+static float SurfaceArea(const AABB& box)
+{
+	Vertice3 e = box.max - box.min;
+
+	return 2.0f *
+		(
+			e.x * e.y +
+			e.x * e.z +
+			e.y * e.z
+			);
+}
+
+static void InitEmptyAABB(AABB& box)
+{
+	box.min = Vertice3(
+		FLT_MAX,
+		FLT_MAX,
+		FLT_MAX);
+
+	box.max = Vertice3(
+		-FLT_MAX,
+		-FLT_MAX,
+		-FLT_MAX);
+}
+
+static void ExpandAABB(AABB& dst, const AABB& src)
+{
+	dst.min.x = fminf(dst.min.x, src.min.x);
+	dst.min.y = fminf(dst.min.y, src.min.y);
+	dst.min.z = fminf(dst.min.z, src.min.z);
+
+	dst.max.x = fmaxf(dst.max.x, src.max.x);
+	dst.max.y = fmaxf(dst.max.y, src.max.y);
+	dst.max.z = fmaxf(dst.max.z, src.max.z);
+}
+
+struct SAHBin
+{
+	AABB bounds;
+	int count;
+};
+
+static bool FindBestSplitSAH(
+	int start,
+	int end,
+	const std::vector<int>& triIndices,
+	const std::vector<TriangleBuildData>& buildData,
+	int& outAxis,
+	int& outSplit)
+{
+	float bestCost = FLT_MAX;
+
+	outAxis = -1;
+	outSplit = -1;
+
+	for (int axis = 0; axis < 3; axis++)
+	{
+		float centroidMin = FLT_MAX;
+		float centroidMax = -FLT_MAX;
+
+		for (int i = start; i < end; i++)
+		{
+			int tri = triIndices[i];
+
+			float c =
+				axis == 0 ? buildData[tri].centroid.x :
+				axis == 1 ? buildData[tri].centroid.y :
+				buildData[tri].centroid.z;
+
+			centroidMin = std::min(centroidMin, c);
+			centroidMax = std::max(centroidMax, c);
+		}
+
+		float extent =
+			centroidMax - centroidMin;
+
+		if (extent < 1e-6f)
+			continue;
+
+		SAHBin bins[BINAABB_COUNT];
+
+		for (int i = 0; i < BINAABB_COUNT; i++)
+		{
+			bins[i].count = 0;
+			InitEmptyAABB(bins[i].bounds);
+		}
+
+		float scale =
+			(float)BINAABB_COUNT / extent;
+
+		for (int i = start; i < end; i++)
+		{
+			int tri = triIndices[i];
+
+			float c =
+				axis == 0 ? buildData[tri].centroid.x :
+				axis == 1 ? buildData[tri].centroid.y :
+				buildData[tri].centroid.z;
+
+			int bin =
+				(int)((c - centroidMin) * scale);
+
+			bin =
+				std::max(0,
+					std::min(bin, BINAABB_COUNT - 1));
+
+			bins[bin].count++;
+
+			ExpandAABB(
+				bins[bin].bounds,
+				buildData[tri].bounds);
+		}
+
+		AABB leftBounds[BINAABB_COUNT - 1];
+		AABB rightBounds[BINAABB_COUNT - 1];
+
+		int leftCount[BINAABB_COUNT - 1];
+		int rightCount[BINAABB_COUNT - 1];
+
+		AABB running;
+		InitEmptyAABB(running);
+
+		int count = 0;
+
+		for (int i = 0; i < BINAABB_COUNT - 1; i++)
+		{
+			count += bins[i].count;
+
+			ExpandAABB(
+				running,
+				bins[i].bounds);
+
+			leftBounds[i] = running;
+			leftCount[i] = count;
+		}
+
+		InitEmptyAABB(running);
+
+		count = 0;
+
+		for (int i = BINAABB_COUNT - 1; i > 0; i--)
+		{
+			count += bins[i].count;
+
+			ExpandAABB(
+				running,
+				bins[i].bounds);
+
+			rightBounds[i - 1] = running;
+			rightCount[i - 1] = count;
+		}
+
+		for (int split = 0;
+			split < BINAABB_COUNT - 1;
+			split++)
+		{
+			if (leftCount[split] == 0 ||
+				rightCount[split] == 0)
+				continue;
+
+			float cost =
+				SurfaceArea(leftBounds[split]) *
+				leftCount[split]
+				+
+				SurfaceArea(rightBounds[split]) *
+				rightCount[split];
+
+			if (cost < bestCost)
+			{
+				bestCost = cost;
+				outAxis = axis;
+				outSplit = split;
+			}
+		}
+	}
+
+	return outAxis != -1;
+}
 static void ComputeBounds(AABB& aabb, int start, int end, std::vector<int>& triIndices,  const std::vector<TriangleBuildData>& buildData)
 {
 	float minx = FLT_MAX;
@@ -145,8 +328,6 @@ static void SortBVH(
 static void BuildBVH(int nodeIndex, int Start, int End, std::vector<int>& triIndices, std::vector<BVHNode>& nodes, const std::vector<Triangle>& triangles, const std::vector<TriangleBuildData>& buildData)
 {
 
-	//	1. Precompute triangle centroids
-	//	2. Precompute triangle AABBs
 	//	3. Implement 16 - bin SAH on longest axis
 	//	4. Replace SortBVH + middle split
 	//	5. Benchmark
@@ -165,9 +346,77 @@ static void BuildBVH(int nodeIndex, int Start, int End, std::vector<int>& triInd
 		return;
 	}
 
-	SortBVH(triIndices, Start, End, triangles);
 
-	int middle = Start + (End - Start) / 2;
+	int axis;
+	int split;
+
+	bool success =
+		FindBestSplitSAH(
+			Start,
+			End,
+			triIndices,
+			buildData,
+			axis,
+			split);
+
+
+	std::vector<int>::iterator midIter;
+
+	if (success)
+	{
+		midIter = std::partition(
+			triIndices.begin() + Start,
+			triIndices.begin() + End,
+			[&](int tri)
+			{
+				float c;
+
+				if (axis == 0)
+					c = buildData[tri].centroid.x;
+				else if (axis == 1)
+					c = buildData[tri].centroid.y;
+				else
+					c = buildData[tri].centroid.z;
+
+				float axisMin =
+					axis == 0 ? node.aabb.min.x :
+					axis == 1 ? node.aabb.min.y :
+					node.aabb.min.z;
+
+				float axisMax =
+					axis == 0 ? node.aabb.max.x :
+					axis == 1 ? node.aabb.max.y :
+					node.aabb.max.z;
+
+				float scale =
+					(float)BINAABB_COUNT /
+					(axisMax - axisMin);
+
+				int bin =
+					(int)((c - axisMin) * scale);
+
+				bin = std::max(0, std::min(bin, BINAABB_COUNT - 1));
+
+				return bin <= split;
+			});
+	}
+	else
+	{
+		std::cout << "SAH failed to find a good split, falling back to middle split." << std::endl;
+		SortBVH(triIndices, Start, End, triangles);
+		midIter = triIndices.begin() + Start + (End - Start) / 2;
+	}
+
+	int middle = (int)(midIter - triIndices.begin());
+
+	if (middle == Start || middle == End)
+	{
+		SortBVH(triIndices, Start, End, triangles);
+		middle = Start + triCount / 2;
+	}
+	//SortBVH(triIndices, Start, End, triangles);
+
+	//int middle = Start + (End - Start) / 2;
 
 	int leftChildIndex = nodes.size();
 	nodes.push_back(BVHNode());

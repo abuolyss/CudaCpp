@@ -271,7 +271,7 @@ __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWid
 __device__ static void TraverseBVH(const BVHNode* gpuNodes, const int* gpuTriIndices, const TriangleSoA triangleSoA, Vertice3 cameraPos, Vertice3 invDir, Vertice3 dir, float& closestDistance, int& closestTriangleIndex, float& outu, float& outv)
 {
 
-	StackEntry stack[20];
+	StackEntry stack[32];
 	int stackPtr = 0;
 	int nodeIndex = 0;
 	float nodeNear = 0;
@@ -361,7 +361,7 @@ __device__ static void TraverseBVH(const BVHNode* gpuNodes, const int* gpuTriInd
 __device__ static bool HitsBVH(const BVHNode* gpuNodes, const int* gpuTriIndices, const TriangleSoA triangleSoA, Vertice3 rayStart, Vertice3 inverseDir, Vertice3 dir, float maxDistance)
 {
 
-	StackEntry stack[20];
+	StackEntry stack[32];
 	int stackPtr = 0;
 	int nodeIndex = 0;
 	float nodeNear = 0;
