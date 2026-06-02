@@ -31,7 +31,7 @@ struct TriangleBuildData
 };
 
 
-static void ComputeBounds(AABB& aabb, int start, int end, std::vector<int>& triIndices, const std::vector<Triangle>& triangles)
+static void ComputeBounds(AABB& aabb, int start, int end, std::vector<int>& triIndices,  const std::vector<TriangleBuildData>& buildData)
 {
 	float minx = FLT_MAX;
 	float miny = FLT_MAX;
@@ -43,12 +43,12 @@ static void ComputeBounds(AABB& aabb, int start, int end, std::vector<int>& triI
 	for (int i = start; i < end; i++)
 	{
 		int triIndex = triIndices[i];
-		minx = fminf(minx, fminf(triangles[triIndex].x.x, fminf(triangles[triIndex].y.x, triangles[triIndex].z.x)));
-		miny = fminf(miny, fminf(triangles[triIndex].x.y, fminf(triangles[triIndex].y.y, triangles[triIndex].z.y)));
-		minz = fminf(minz, fminf(triangles[triIndex].x.z, fminf(triangles[triIndex].y.z, triangles[triIndex].z.z)));
-		maxx = fmaxf(maxx, fmaxf(triangles[triIndex].x.x, fmaxf(triangles[triIndex].y.x, triangles[triIndex].z.x)));
-		maxy = fmaxf(maxy, fmaxf(triangles[triIndex].x.y, fmaxf(triangles[triIndex].y.y, triangles[triIndex].z.y)));
-		maxz = fmaxf(maxz, fmaxf(triangles[triIndex].x.z, fmaxf(triangles[triIndex].y.z, triangles[triIndex].z.z)));
+		minx = fminf(minx, buildData[triIndex].bounds.min.x);
+		miny = fminf(miny, buildData[triIndex].bounds.min.y);
+		minz = fminf(minz, buildData[triIndex].bounds.min.z);
+		maxx = fmaxf(maxx, buildData[triIndex].bounds.max.x);
+		maxy = fmaxf(maxy, buildData[triIndex].bounds.max.y);
+		maxz = fmaxf(maxz, buildData[triIndex].bounds.max.z);
 	}
 	aabb.min = Vertice3(minx, miny, minz);
 	aabb.max = Vertice3(maxx, maxy, maxz);
@@ -142,7 +142,7 @@ static void SortBVH(
 		});
 }
 
-static void BuildBVH(int nodeIndex, int Start, int End, std::vector<int>& triIndices, std::vector<BVHNode>& nodes, const std::vector<Triangle>& triangles)
+static void BuildBVH(int nodeIndex, int Start, int End, std::vector<int>& triIndices, std::vector<BVHNode>& nodes, const std::vector<Triangle>& triangles, const std::vector<TriangleBuildData>& buildData)
 {
 
 	//	1. Precompute triangle centroids
@@ -156,7 +156,7 @@ static void BuildBVH(int nodeIndex, int Start, int End, std::vector<int>& triInd
 
 	int triCount = End - Start;
 
-	ComputeBounds(node.aabb, Start, End, triIndices, triangles);
+	ComputeBounds(node.aabb, Start, End, triIndices, buildData);
 
 	if (triCount <= 4)
 	{
@@ -178,13 +178,38 @@ static void BuildBVH(int nodeIndex, int Start, int End, std::vector<int>& triInd
 	nodes[nodeIndex].leftFirst = leftChildIndex;
 	nodes[nodeIndex].triCount = 0;
 
-	BuildBVH(leftChildIndex, Start, middle, triIndices, nodes, triangles);
+	BuildBVH(leftChildIndex, Start, middle, triIndices, nodes, triangles, buildData);
 
-	BuildBVH(rightChildIndex, middle, End, triIndices, nodes, triangles);
+	BuildBVH(rightChildIndex, middle, End, triIndices, nodes, triangles, buildData);
 }
 
 static void GenerateBVH(const std::vector<Triangle>& triangles, std::vector<BVHNode>& nodes, std::vector<int>& triIndices)
 {
+	std::vector<TriangleBuildData> buildData(triangles.size());
+
+	for (int i = 0; i < triangles.size(); i++)
+	{
+		buildData[i].centroid =
+		{
+			(triangles[i].x.x + triangles[i].y.x + triangles[i].z.x) / 3.0f,
+			(triangles[i].x.y + triangles[i].y.y + triangles[i].z.y) / 3.0f,
+			(triangles[i].x.z + triangles[i].y.z + triangles[i].z.z) / 3.0f
+		};
+		float minx = fminf(triangles[i].x.x, fminf(triangles[i].y.x, triangles[i].z.x));
+
+		float miny = fminf(triangles[i].x.y, fminf(triangles[i].y.y, triangles[i].z.y));
+
+		float minz = fminf(triangles[i].x.z, fminf(triangles[i].y.z, triangles[i].z.z));
+
+		float maxx = fmaxf(triangles[i].x.x, fmaxf(triangles[i].y.x, triangles[i].z.x));
+
+		float maxy = fmaxf(triangles[i].x.y, fmaxf(triangles[i].y.y, triangles[i].z.y));
+
+		float maxz = fmaxf(triangles[i].x.z, fmaxf(triangles[i].y.z, triangles[i].z.z));
+
+		buildData[i].bounds.min = Vertice3(minx, miny, minz);
+		buildData[i].bounds.max = Vertice3(maxx, maxy, maxz);
+	}
 
 	for (int i = 0; i < triangles.size(); i++)
 	{
@@ -195,5 +220,5 @@ static void GenerateBVH(const std::vector<Triangle>& triangles, std::vector<BVHN
 
 	nodes.push_back(BVHNode());
 
-	BuildBVH(0, 0, triangles.size(), triIndices, nodes, triangles);
+	BuildBVH(0, 0, triangles.size(), triIndices, nodes, triangles, buildData);
 }
