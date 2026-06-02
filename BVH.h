@@ -2,8 +2,8 @@
 
 
 #include "structs.h"
-#include <vector>
 #include <algorithm>
+#include <vector>
 
 
 struct AABB
@@ -24,8 +24,14 @@ struct BVHNode
 	int leftFirst;
 };
 
+struct TriangleBuildData
+{
+	Vertice3 centroid;
+	AABB bounds;
+};
 
-static void ComputeBounds(AABB& aabb, int start, int end, std::vector<int>& triIndices, TriangleSoA& triangleSoA)
+
+static void ComputeBounds(AABB& aabb, int start, int end, std::vector<int>& triIndices, const std::vector<Triangle>& triangles)
 {
 	float minx = FLT_MAX;
 	float miny = FLT_MAX;
@@ -37,12 +43,12 @@ static void ComputeBounds(AABB& aabb, int start, int end, std::vector<int>& triI
 	for (int i = start; i < end; i++)
 	{
 		int triIndex = triIndices[i];
-		minx = fminf(minx, fminf(triangleSoA.ax[triIndex], fminf(triangleSoA.bx[triIndex], triangleSoA.cx[triIndex])));
-		miny = fminf(miny, fminf(triangleSoA.ay[triIndex], fminf(triangleSoA.by[triIndex], triangleSoA.cy[triIndex])));
-		minz = fminf(minz, fminf(triangleSoA.az[triIndex], fminf(triangleSoA.bz[triIndex], triangleSoA.cz[triIndex])));
-		maxx = fmaxf(maxx, fmaxf(triangleSoA.ax[triIndex], fmaxf(triangleSoA.bx[triIndex], triangleSoA.cx[triIndex])));
-		maxy = fmaxf(maxy, fmaxf(triangleSoA.ay[triIndex], fmaxf(triangleSoA.by[triIndex], triangleSoA.cy[triIndex])));
-		maxz = fmaxf(maxz, fmaxf(triangleSoA.az[triIndex], fmaxf(triangleSoA.bz[triIndex], triangleSoA.cz[triIndex])));
+		minx = fminf(minx, fminf(triangles[triIndex].x.x, fminf(triangles[triIndex].y.x, triangles[triIndex].z.x)));
+		miny = fminf(miny, fminf(triangles[triIndex].x.y, fminf(triangles[triIndex].y.y, triangles[triIndex].z.y)));
+		minz = fminf(minz, fminf(triangles[triIndex].x.z, fminf(triangles[triIndex].y.z, triangles[triIndex].z.z)));
+		maxx = fmaxf(maxx, fmaxf(triangles[triIndex].x.x, fmaxf(triangles[triIndex].y.x, triangles[triIndex].z.x)));
+		maxy = fmaxf(maxy, fmaxf(triangles[triIndex].x.y, fmaxf(triangles[triIndex].y.y, triangles[triIndex].z.y)));
+		maxz = fmaxf(maxz, fmaxf(triangles[triIndex].x.z, fmaxf(triangles[triIndex].y.z, triangles[triIndex].z.z)));
 	}
 	aabb.min = Vertice3(minx, miny, minz);
 	aabb.max = Vertice3(maxx, maxy, maxz);
@@ -52,7 +58,7 @@ static void SortBVH(
 	std::vector<int>& triIndices,
 	int start,
 	int end,
-	TriangleSoA& triangleSoA)
+	const std::vector<Triangle>& triangles)
 {
 	float minX = FLT_MAX;
 	float minY = FLT_MAX;
@@ -67,19 +73,14 @@ static void SortBVH(
 		int tri = triIndices[i];
 
 		float cx =
-			(triangleSoA.ax[tri] +
-				triangleSoA.bx[tri] +
-				triangleSoA.cx[tri]) / 3.0f;
+			(triangles[tri].x.x + triangles[tri].y.x + triangles[tri].z.x) / 3.0f;
 
 		float cy =
-			(triangleSoA.ay[tri] +
-				triangleSoA.by[tri] +
-				triangleSoA.cy[tri]) / 3.0f;
+			(triangles[tri].x.y + triangles[tri].y.y + triangles[tri].z.y) / 3.0f;
 
 		float cz =
-			(triangleSoA.az[tri] +
-				triangleSoA.bz[tri] +
-				triangleSoA.cz[tri]) / 3.0f;
+			(triangles[tri].x.z + triangles[tri].y.z + triangles[tri].z.z) / 3.0f;
+
 
 		minX = std::min(minX, cx);
 		minY = std::min(minY, cy);
@@ -108,34 +109,24 @@ static void SortBVH(
 		[&](int a, int b)
 		{
 			float ax =
-				(triangleSoA.ax[a] +
-					triangleSoA.bx[a] +
-					triangleSoA.cx[a]) / 3.0f;
+				(triangles[a].x.x + triangles[a].y.x + triangles[a].z.x) / 3.0f;
 
 			float ay =
-				(triangleSoA.ay[a] +
-					triangleSoA.by[a] +
-					triangleSoA.cy[a]) / 3.0f;
+				(triangles[a].x.y + triangles[a].y.y + triangles[a].z.y) / 3.0f;
 
 			float az =
-				(triangleSoA.az[a] +
-					triangleSoA.bz[a] +
-					triangleSoA.cz[a]) / 3.0f;
+				(triangles[a].x.z + triangles[a].y.z + triangles[a].z.z) / 3.0f;
 
 			float bx =
-				(triangleSoA.ax[b] +
-					triangleSoA.bx[b] +
-					triangleSoA.cx[b]) / 3.0f;
+				(triangles[b].x.x + triangles[b].y.x + triangles[b].z.x) / 3.0f;
 
 			float by =
-				(triangleSoA.ay[b] +
-					triangleSoA.by[b] +
-					triangleSoA.cy[b]) / 3.0f;
+				(triangles[b].x.y + triangles[b].y.y + triangles[b].z.y) / 3.0f;
 
 			float bz =
-				(triangleSoA.az[b] +
-					triangleSoA.bz[b] +
-					triangleSoA.cz[b]) / 3.0f;
+				(triangles[b].x.z + triangles[b].y.z + triangles[b].z.z) / 3.0f;
+
+
 
 			switch (axis)
 			{
@@ -151,13 +142,21 @@ static void SortBVH(
 		});
 }
 
-static void BuildBVH(int nodeIndex, int Start, int End, std::vector<int>& triIndices, std::vector<BVHNode>& nodes, TriangleSoA& triangleSoA)
+static void BuildBVH(int nodeIndex, int Start, int End, std::vector<int>& triIndices, std::vector<BVHNode>& nodes, const std::vector<Triangle>& triangles)
 {
+
+	//	1. Precompute triangle centroids
+	//	2. Precompute triangle AABBs
+	//	3. Implement 16 - bin SAH on longest axis
+	//	4. Replace SortBVH + middle split
+	//	5. Benchmark
+	//	6. Extend SAH to evaluate X, Y, Z
+
 	BVHNode& node = nodes[nodeIndex];
 
 	int triCount = End - Start;
 
-	ComputeBounds(node.aabb, Start, End, triIndices, triangleSoA);
+	ComputeBounds(node.aabb, Start, End, triIndices, triangles);
 
 	if (triCount <= 4)
 	{
@@ -166,7 +165,7 @@ static void BuildBVH(int nodeIndex, int Start, int End, std::vector<int>& triInd
 		return;
 	}
 
-	SortBVH(triIndices, Start, End, triangleSoA);
+	SortBVH(triIndices, Start, End, triangles);
 
 	int middle = Start + (End - Start) / 2;
 
@@ -179,15 +178,15 @@ static void BuildBVH(int nodeIndex, int Start, int End, std::vector<int>& triInd
 	nodes[nodeIndex].leftFirst = leftChildIndex;
 	nodes[nodeIndex].triCount = 0;
 
-	BuildBVH(leftChildIndex, Start, middle, triIndices, nodes, triangleSoA);
+	BuildBVH(leftChildIndex, Start, middle, triIndices, nodes, triangles);
 
-	BuildBVH(rightChildIndex, middle, End, triIndices, nodes, triangleSoA);
+	BuildBVH(rightChildIndex, middle, End, triIndices, nodes, triangles);
 }
 
-static void GenerateBVH(TriangleSoA& triangleSoA, std::vector<BVHNode>& nodes, std::vector<int>& triIndices, int triangleCount)
+static void GenerateBVH(const std::vector<Triangle>& triangles, std::vector<BVHNode>& nodes, std::vector<int>& triIndices)
 {
 
-	for (int i = 0; i < triangleCount; i++)
+	for (int i = 0; i < triangles.size(); i++)
 	{
 		triIndices.push_back(i);
 	}
@@ -196,5 +195,5 @@ static void GenerateBVH(TriangleSoA& triangleSoA, std::vector<BVHNode>& nodes, s
 
 	nodes.push_back(BVHNode());
 
-	BuildBVH(0, 0, triangleCount, triIndices, nodes, triangleSoA);
+	BuildBVH(0, 0, triangles.size(), triIndices, nodes, triangles);
 }

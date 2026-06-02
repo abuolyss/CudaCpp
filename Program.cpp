@@ -38,11 +38,11 @@ int main()
 
 	Uint32* cpuFramebuffer = new Uint32[screenWidth * screenHeight];
 
-	
-	
+
+
 	SDLInitialize(screenWidth, screenHeight, &window, &renderer, &texture);
-	
-	
+
+
 
 
 	std::cout << "Reading triangle .Obj file." << std::endl;
@@ -52,21 +52,21 @@ int main()
 
 
 
-	std::cout << "Converting triangles into triangle SoA." << std::endl;
-	TriangleSoA triangleSoA;
-	ConvertTriangles(triangles, triangleSoA);
 
 	std::cout << "Creating the BVH data." << std::endl;
 
 	std::vector<int> triIndices;
 	std::vector<BVHNode> nodes;
-	GenerateBVH(triangleSoA, nodes, triIndices, triangles.size());
+	GenerateBVH(triangles, nodes, triIndices);
 
+	std::cout << "Converting triangles into triangle SoA." << std::endl;
+	TriangleSoA triangleSoA;
+	ConvertTriangles(triangles, triangleSoA);
 
 
 	BVHNode* gpuNodes;
 	int* gpuTriIndices;
-	
+
 	Uint32* gpuFramebuffer;
 	cudaMalloc(&gpuFramebuffer, screenWidth * screenHeight * sizeof(Uint32));
 
@@ -174,7 +174,7 @@ int main()
 
 		SDLRenderLoop(screenWidth, screenHeight, window, renderer, texture, cpuFramebuffer, gpuFramebuffer);
 	}
-	
+
 	std::cout << "Program closed, freeing the memory." << std::endl << std::endl;
 	cudaFree(gpuNodes);
 	cudaFree(gpuTriIndices);
@@ -200,82 +200,133 @@ static void FPSCounter()
 	}
 }
 
-static void ConvertTriangles(const std::vector<Triangle>& triangles, TriangleSoA& triangleSoA)
+static void ConvertTriangles(
+	const std::vector<Triangle>& triangles,
+	TriangleSoA& triangleSoA)
 {
-	cudaMallocManaged(&triangleSoA.ax, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.ay, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.az, triangles.size() * sizeof(float));
+	size_t count = triangles.size();
 
-	cudaMallocManaged(&triangleSoA.bx, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.by, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.bz, triangles.size() * sizeof(float));
+	std::vector<float> ax(count), ay(count), az(count);
+	std::vector<float> bx(count), by(count), bz(count);
+	std::vector<float> cx(count), cy(count), cz(count);
 
-	cudaMallocManaged(&triangleSoA.cx, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.cy, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.cz, triangles.size() * sizeof(float));
+	std::vector<float> E1x(count), E1y(count), E1z(count);
+	std::vector<float> E2x(count), E2y(count), E2z(count);
 
-	cudaMallocManaged(&triangleSoA.E1x, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.E1y, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.E1z, triangles.size() * sizeof(float));
+	std::vector<float> N0x(count), N0y(count), N0z(count);
+	std::vector<float> N1x(count), N1y(count), N1z(count);
+	std::vector<float> N2x(count), N2y(count), N2z(count);
 
-	cudaMallocManaged(&triangleSoA.E2x, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.E2y, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.E2z, triangles.size() * sizeof(float));
+	std::vector<Uint32> packedColor(count);
 
-	cudaMallocManaged(&triangleSoA.N0x, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.N0y, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.N0z, triangles.size() * sizeof(float));
-
-	cudaMallocManaged(&triangleSoA.N1x, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.N1y, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.N1z, triangles.size() * sizeof(float));
-
-	cudaMallocManaged(&triangleSoA.N2x, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.N2y, triangles.size() * sizeof(float));
-	cudaMallocManaged(&triangleSoA.N2z, triangles.size() * sizeof(float));
-
-	cudaMallocManaged(&triangleSoA.packedColor, triangles.size() * sizeof(Uint32));
-
-	for (size_t i = 0; i < triangles.size(); i++)
+	for (size_t i = 0; i < count; i++)
 	{
 		const Triangle& tri = triangles[i];
 
-		triangleSoA.ax[i] = tri.x.x;
-		triangleSoA.ay[i] = tri.x.y;
-		triangleSoA.az[i] = tri.x.z;
+		ax[i] = tri.x.x;
+		ay[i] = tri.x.y;
+		az[i] = tri.x.z;
 
-		triangleSoA.bx[i] = tri.y.x;
-		triangleSoA.by[i] = tri.y.y;
-		triangleSoA.bz[i] = tri.y.z;
+		bx[i] = tri.y.x;
+		by[i] = tri.y.y;
+		bz[i] = tri.y.z;
 
-		triangleSoA.cx[i] = tri.z.x;
-		triangleSoA.cy[i] = tri.z.y;
-		triangleSoA.cz[i] = tri.z.z;
+		cx[i] = tri.z.x;
+		cy[i] = tri.z.y;
+		cz[i] = tri.z.z;
 
-		triangleSoA.E1x[i] = tri.y.x - tri.x.x;
-		triangleSoA.E1y[i] = tri.y.y - tri.x.y;
-		triangleSoA.E1z[i] = tri.y.z - tri.x.z;
+		E1x[i] = tri.y.x - tri.x.x;
+		E1y[i] = tri.y.y - tri.x.y;
+		E1z[i] = tri.y.z - tri.x.z;
 
-		triangleSoA.E2x[i] = tri.z.x - tri.x.x;
-		triangleSoA.E2y[i] = tri.z.y - tri.x.y;
-		triangleSoA.E2z[i] = tri.z.z - tri.x.z;
+		E2x[i] = tri.z.x - tri.x.x;
+		E2y[i] = tri.z.y - tri.x.y;
+		E2z[i] = tri.z.z - tri.x.z;
 
-		triangleSoA.N0x[i] = tri.nx.x;
-		triangleSoA.N0y[i] = tri.nx.y;
-		triangleSoA.N0z[i] = tri.nx.z;
+		N0x[i] = tri.nx.x;
+		N0y[i] = tri.nx.y;
+		N0z[i] = tri.nx.z;
 
-		triangleSoA.N1x[i] = tri.ny.x;
-		triangleSoA.N1y[i] = tri.ny.y;
-		triangleSoA.N1z[i] = tri.ny.z;
+		N1x[i] = tri.ny.x;
+		N1y[i] = tri.ny.y;
+		N1z[i] = tri.ny.z;
 
-		triangleSoA.N2x[i] = tri.nz.x;
-		triangleSoA.N2y[i] = tri.nz.y;
-		triangleSoA.N2z[i] = tri.nz.z;
+		N2x[i] = tri.nz.x;
+		N2y[i] = tri.nz.y;
+		N2z[i] = tri.nz.z;
 
-		triangleSoA.packedColor[i] = tri.color;
+		packedColor[i] = tri.color;
 	}
 
+	cudaMalloc(&triangleSoA.ax, count * sizeof(float));
+	cudaMalloc(&triangleSoA.ay, count * sizeof(float));
+	cudaMalloc(&triangleSoA.az, count * sizeof(float));
+
+	cudaMalloc(&triangleSoA.bx, count * sizeof(float));
+	cudaMalloc(&triangleSoA.by, count * sizeof(float));
+	cudaMalloc(&triangleSoA.bz, count * sizeof(float));
+
+	cudaMalloc(&triangleSoA.cx, count * sizeof(float));
+	cudaMalloc(&triangleSoA.cy, count * sizeof(float));
+	cudaMalloc(&triangleSoA.cz, count * sizeof(float));
+
+	cudaMalloc(&triangleSoA.E1x, count * sizeof(float));
+	cudaMalloc(&triangleSoA.E1y, count * sizeof(float));
+	cudaMalloc(&triangleSoA.E1z, count * sizeof(float));
+
+	cudaMalloc(&triangleSoA.E2x, count * sizeof(float));
+	cudaMalloc(&triangleSoA.E2y, count * sizeof(float));
+	cudaMalloc(&triangleSoA.E2z, count * sizeof(float));
+
+	cudaMalloc(&triangleSoA.N0x, count * sizeof(float));
+	cudaMalloc(&triangleSoA.N0y, count * sizeof(float));
+	cudaMalloc(&triangleSoA.N0z, count * sizeof(float));
+
+	cudaMalloc(&triangleSoA.N1x, count * sizeof(float));
+	cudaMalloc(&triangleSoA.N1y, count * sizeof(float));
+	cudaMalloc(&triangleSoA.N1z, count * sizeof(float));
+
+	cudaMalloc(&triangleSoA.N2x, count * sizeof(float));
+	cudaMalloc(&triangleSoA.N2y, count * sizeof(float));
+	cudaMalloc(&triangleSoA.N2z, count * sizeof(float));
+
+	cudaMalloc(&triangleSoA.packedColor, count * sizeof(Uint32));
+
+	cudaMemcpy(triangleSoA.ax, ax.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.ay, ay.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.az, az.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+
+	cudaMemcpy(triangleSoA.bx, bx.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.by, by.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.bz, bz.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+
+	cudaMemcpy(triangleSoA.cx, cx.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.cy, cy.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.cz, cz.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+
+	cudaMemcpy(triangleSoA.E1x, E1x.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.E1y, E1y.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.E1z, E1z.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+
+	cudaMemcpy(triangleSoA.E2x, E2x.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.E2y, E2y.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.E2z, E2z.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+
+	cudaMemcpy(triangleSoA.N0x, N0x.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.N0y, N0y.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.N0z, N0z.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+
+	cudaMemcpy(triangleSoA.N1x, N1x.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.N1y, N1y.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.N1z, N1z.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+
+	cudaMemcpy(triangleSoA.N2x, N2x.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.N2y, N2y.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.N2z, N2z.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+
+	cudaMemcpy(triangleSoA.packedColor,
+		packedColor.data(),
+		count * sizeof(Uint32),
+		cudaMemcpyHostToDevice);
 }
-
-
 
