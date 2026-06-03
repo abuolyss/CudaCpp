@@ -9,9 +9,10 @@
 #include <SDL3/SDL_mouse.h>
 #include "BVH.h"
 #include <chrono>
-#include "SDLmanager.cpp"
+#include "SDLmanager.h"
 #include <windows.h>
 #include "lights.h"
+#include "TextureReader.h"
 
 
 static void UploadLights(const std::vector<PointLight>& cpuLights);
@@ -34,6 +35,13 @@ static int screenHeight = 1080;
 
 int main()
 {
+	LoadTexture();
+
+
+
+
+
+
 	std::cout << "Program launched." << std::endl;
 
 	SDL_Window* window;

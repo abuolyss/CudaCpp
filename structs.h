@@ -5,12 +5,17 @@
 #include <cuda_runtime.h>
 #include <math.h>
 
-
+struct UV
+{
+	float u, v;
+};
 
 struct Vertice3
 {
 	//coords for vector or vertices
 	float x, y, z;
+
+	UV uv0, uv1, uv2;
 
 	__host__ __device__ inline Vertice3() : x(0), y(0), z(0) {}
 

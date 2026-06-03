@@ -76,7 +76,7 @@
     <LibraryPath>C:\Users\makar\OneDrive\Documents\SDL3\SDL3-3.4.8\lib\x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <IncludePath>C:\Users\makar\OneDrive\Documents\SDL3\SDL3-3.4.8\include;$(IncludePath)</IncludePath>
+    <IncludePath>C:\Users\makar\OneDrive\Documents\SDL3\SDL3_image-3.4.4\include;C:\Users\makar\OneDrive\Documents\SDL3\SDL3-3.4.8\include;$(IncludePath)</IncludePath>
     <LibraryPath>C:\Users\makar\OneDrive\Documents\SDL3\SDL3-3.4.8\lib\x64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -144,7 +144,8 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>SDL3.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SDL3.lib;SDL3_image.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\Users\makar\OneDrive\Documents\SDL3\SDL3_image-3.4.4\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
     <Manifest>
       <EnableSegmentHeap>true</EnableSegmentHeap>
@@ -160,6 +161,7 @@
     <ClCompile Include="Program.cpp" />
     <ClCompile Include="SDLmanager.cpp" />
     <ClCompile Include="structs.h" />
+    <ClCompile Include="TextureReader.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="BVH.h" />
@@ -167,6 +169,7 @@
     <ClInclude Include="lights.h" />
     <ClInclude Include="objImport.h" />
     <ClInclude Include="SDLmanager.h" />
+    <ClInclude Include="TextureReader.h" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="Gpu.cu">
