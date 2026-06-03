@@ -28,6 +28,11 @@ struct Vertice3
 		return Vertice3(x - other.x, y - other.y, z - other.z);
 	}
 
+	__host__ __device__	inline Vertice3 operator-() const
+	{
+		return Vertice3(-x, -y, -z);
+	}
+
 	__host__ __device__ inline Vertice3 operator*(float scalar) const
 	{
 		return Vertice3(x * scalar, y * scalar, z * scalar);
@@ -47,7 +52,7 @@ struct Vertice3
 		z -= other.z;
 	}
 
-	__host__ __device__ inline float operator*(const Vertice3& other) const
+	__host__ __device__ inline float Dot(const Vertice3& other) const
 	{
 		return fmaf(z, other.z, fmaf(y, other.y, x * other.x));
 	}

@@ -111,8 +111,8 @@ int main()
 	light2.position.z = 43;
 
 	light2.color.x = 1;
-	light2.color.y = 1;
-	light2.color.z = 1;
+	light2.color.y = 0;
+	light2.color.z = 0;
 
 	light2.intensity = 30;
 
@@ -123,8 +123,8 @@ int main()
 	light3.position.y = 6.5;
 	light3.position.z = -25;
 
-	light3.color.x = 1;
-	light3.color.y = 1;
+	light3.color.x = 0.2;
+	light3.color.y = 0;
 	light3.color.z = 1;
 
 	light3.intensity = 30;
@@ -135,8 +135,8 @@ int main()
 	light4.position.y = 6.5;
 	light4.position.z = 43;
 
-	light4.color.x = 1;
-	light4.color.y = 1;
+	light4.color.x = 0;
+	light4.color.y = 0.8;
 	light4.color.z = 1;
 
 	light4.intensity = 30;

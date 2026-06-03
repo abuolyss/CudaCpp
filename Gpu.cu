@@ -18,6 +18,8 @@ __device__ static bool HitsBVH(const BVHNode* gpuNodes, const int* gpuTriIndices
 
 __device__ static void TraverseBVH(const BVHNode* gpuNodes, const int* gpuTriIndices, const TriangleSoA triangleSoA, Vertice3 cameraPos, Vertice3 invDir, Vertice3 dir, float& closestDistance, int& closestTriangleIndex, float& outu, float& outv);
 
+__device__ __forceinline__ ShadingData BuildShadingData(const TriangleSoA& triangles, const SurfaceHit& hit, const Vertice3& cameraPosition, const Vertice3& rayDirection);
+
 void GetCudaStats(int& shadowRays, int& pixels)
 {
 	cudaMemcpyFromSymbol(
@@ -46,7 +48,7 @@ __host__ void LaunchRender(Uint32* framebuffer, int numTriangles, int screenWidt
 		(screenHeight + blockSize.y - 1) / blockSize.y
 	);
 	RenderScene << <gridSize, blockSize >> > (framebuffer, numTriangles, screenWidth, screenHeight, cameraPos, triangleSoA, gpuNodes, gpuTriIndices, nodeCount, cameraForward, cameraRight, cameraUp);
-	
+
 	cudaDeviceSynchronize();
 
 }
@@ -138,15 +140,13 @@ __device__ __forceinline__ bool HitAABB(Vertice3 rayOrigin, Vertice3 rayDir, AAB
 
 __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWidth, int screenHeight, Vertice3 cameraPos, const TriangleSoA triangleSoA, BVHNode* gpuNodes, int* gpuTriIndices, int nodeCount, Vertice3 cameraForward, Vertice3 cameraRight, Vertice3 cameraUp)
 {
-	
+
 
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 
 	if (x >= screenWidth || y >= screenHeight)
 		return;
-
-
 
 	float viewportDistance = 1;
 	float viewportWidth = 1.7778;
@@ -163,117 +163,141 @@ __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWid
 	Vertice3 dir = cameraForward * viewportDistance + cameraRight * (u * viewportWidth) + cameraUp * (v * viewportHeight);
 
 
-	//gpuNodes;
-	//gpuTriIndices;
 	dir.NormalizeValue();
 
 	Vertice3 invDir = Vertice3(1.0f / dir.x, 1.0f / dir.y, 1.0f / dir.z);
 
-	//int triangleTests = 0;
-	//int aabbcount = 0;
-
 	float outu, outv;
 
-	//For each ray, traverse the BVH to find the closest triangle intersection
 	TraverseBVH(gpuNodes, gpuTriIndices, triangleSoA, cameraPos, invDir, dir, closestDistance, closestTriangleIndex, outu, outv);
 
 
-
-	// if hit , then shoot shadow ray
 	if (closestTriangleIndex != -1)
 	{
 		atomicAdd(&hitPixels, 1);
 
-		float w = 1.0f - outu - outv;
+		SurfaceHit hit;
 
-		float normalx =
-			triangleSoA.N0x[closestTriangleIndex] * w +
-			triangleSoA.N1x[closestTriangleIndex] * outu +
-			triangleSoA.N2x[closestTriangleIndex] * outv;
+		hit.triangleIndex = closestTriangleIndex;
+		hit.distance = closestDistance;
+		hit.barycentricU = outu;
+		hit.barycentricV = outv;
 
-		float normaly =
-			triangleSoA.N0y[closestTriangleIndex] * w +
-			triangleSoA.N1y[closestTriangleIndex] * outu +
-			triangleSoA.N2y[closestTriangleIndex] * outv;
-
-		float normalz =
-			triangleSoA.N0z[closestTriangleIndex] * w +
-			triangleSoA.N1z[closestTriangleIndex] * outu +
-			triangleSoA.N2z[closestTriangleIndex] * outv;
-
-
-		float invLength = rsqrtf(normalx * normalx + normaly * normaly + normalz * normalz);
-
-		normalx *= invLength;
-		normaly *= invLength;
-		normalz *= invLength;
-
-
-		Vertice3 hitPoint = cameraPos + dir * closestDistance;
-
-
-
-
-
-
-		if (normalx * -dir.x +
-			normaly * -dir.y +
-			normalz * -dir.z < 0.0f)
-		{
-			normalx = -normalx;
-			normaly = -normaly;
-			normalz = -normalz;
-		}
-		Vertice3 shadowOrigin = Vertice3(hitPoint.x + normalx * 0.001f, hitPoint.y + normaly * 0.001f, hitPoint.z + normalz * 0.001f);
+		ShadingData shading = BuildShadingData(triangleSoA, hit, cameraPos, dir);
 
 		float totalLightr = 0.0f;
 		float totalLightg = 0.0f;
 		float totalLightb = 0.0f;
 
+		int closestLights[4] =
+		{
+			-1, -1, -1, -1
+		};
+
+		float closestDistances[4] =
+		{
+			FLT_MAX, FLT_MAX, FLT_MAX, FLT_MAX
+		};
+
 		for (int i = 0; i < gpuLightCount; i++)
 		{
+			float dist2 =
+				gpuLights[i].DistanceSquared(shading.hitPoint);
+
+			for (int slot = 0; slot < 4; slot++)
+			{
+				if (dist2 < closestDistances[slot])
+				{
+					for (int shift = 3; shift > slot; shift--)
+					{
+						closestDistances[shift] =
+							closestDistances[shift - 1];
+
+						closestLights[shift] =
+							closestLights[shift - 1];
+					}
+
+					closestDistances[slot] = dist2;
+					closestLights[slot] = i;
+
+					break;
+				}
+			}
+		}
+
+		for (int lightIndex = 0; lightIndex < 4; lightIndex++)
+		{
+			int i = closestLights[lightIndex];
+
+			if (i < 0)
+				continue;
+
+
 
 			const PointLightGPU& light = gpuLights[i];
-			float distanceSq = light.DistanceSquared(hitPoint);
 
-			if (light.intensity / distanceSq < 0.01f)
+			float distanceSq = light.DistanceSquared(shading.hitPoint);
+
+			if (light.intensity / distanceSq < 0.02f)
 				continue;
 
 			float maxRange = light.intensity;
 
-
-			if (distanceSq > maxRange * maxRange*2)
+			if (distanceSq > maxRange * maxRange * 2)
 				continue;
-			
-			Vertice3 lightDir(light.posx - hitPoint.x, light.posy - hitPoint.y, light.posz - hitPoint.z);
 
+			Vertice3 lightDir(
+				light.posx - shading.hitPoint.x,
+				light.posy - shading.hitPoint.y,
+				light.posz - shading.hitPoint.z);
 
+			float invDistance = rsqrtf(distanceSq);
 
-			float lightDistance = sqrtf(distanceSq);
+			Vertice3 lightDirNormalized(
+				lightDir.x * invDistance,
+				lightDir.y * invDistance,
+				lightDir.z * invDistance);
 
-			Vertice3 lightDirNormalized = Vertice3(lightDir.x / lightDistance, lightDir.y / lightDistance, lightDir.z / lightDistance);
+			float lightDistance = distanceSq * invDistance;
 
-			Vertice3 shadowRayDirInv = lightDirNormalized.Reciprocal();
+			Vertice3 shadowRayDirInv =
+				lightDirNormalized.Reciprocal();
 
+			float NdotL = fmaxf(
+				shading.normal.x * lightDirNormalized.x +
+				shading.normal.y * lightDirNormalized.y +
+				shading.normal.z * lightDirNormalized.z,
+				0.0f);
 
-			float NdotL = fmaxf((normalx * lightDirNormalized.x + normaly * lightDirNormalized.y + normalz * lightDirNormalized.z), 0.0f);
 			if (NdotL <= 0.0f)
 				continue;
 
 			float attenuation = 1.0f / distanceSq;
 
 			atomicAdd(&shadowRayCount, 1);
-			bool shadowed = HitsBVH(gpuNodes, gpuTriIndices, triangleSoA, shadowOrigin, shadowRayDirInv, lightDirNormalized, lightDistance);
+
+			bool shadowed =
+				HitsBVH(
+					gpuNodes,
+					gpuTriIndices,
+					triangleSoA,
+					shading.shadowRayOrigin,
+					shadowRayDirInv,
+					lightDirNormalized,
+					lightDistance);
 
 			if (!shadowed)
 			{
-
 				NdotL *= attenuation;
 
-				totalLightr += NdotL * light.intensity * light.colorx;
-				totalLightg += NdotL * light.intensity * light.colory;
-				totalLightb += NdotL * light.intensity * light.colorz;
+				totalLightr +=
+					NdotL * light.intensity * light.colorx;
 
+				totalLightg +=
+					NdotL * light.intensity * light.colory;
+
+				totalLightb +=
+					NdotL * light.intensity * light.colorz;
 			}
 		}
 
@@ -498,4 +522,50 @@ __device__ static bool HitsBVH(const BVHNode* gpuNodes, const int* gpuTriIndices
 		}
 	}
 	return false;
+}
+
+__device__ __forceinline__ ShadingData BuildShadingData(
+	const TriangleSoA& triangles,
+	const SurfaceHit& hit,
+	const Vertice3& cameraPosition,
+	const Vertice3& rayDirection)
+{
+	ShadingData result;
+
+	float w = 1.0f - hit.barycentricU - hit.barycentricV;
+
+	result.normal.x = triangles.N0x[hit.triangleIndex] * w +
+		triangles.N1x[hit.triangleIndex] * hit.barycentricU +
+		triangles.N2x[hit.triangleIndex] * hit.barycentricV;
+
+	result.normal.y = triangles.N0y[hit.triangleIndex] * w +
+		triangles.N1y[hit.triangleIndex] * hit.barycentricU +
+		triangles.N2y[hit.triangleIndex] * hit.barycentricV;
+
+	result.normal.z = triangles.N0z[hit.triangleIndex] * w +
+		triangles.N1z[hit.triangleIndex] * hit.barycentricU +
+		triangles.N2z[hit.triangleIndex] * hit.barycentricV;
+
+	float inverseLength = rsqrtf(result.normal.x * result.normal.x +
+		result.normal.y * result.normal.y +
+		result.normal.z * result.normal.z);
+
+	result.normal.x *= inverseLength;
+	result.normal.y *= inverseLength;
+	result.normal.z *= inverseLength;
+
+	result.hitPoint =
+		cameraPosition +
+		rayDirection * hit.distance;
+
+	if (result.normal.Dot(-rayDirection) < 0.0f)
+	{
+		result.normal = result.normal * -1.0f;
+	}
+
+	result.shadowRayOrigin =
+		result.hitPoint +
+		result.normal * 0.001f;
+
+	return result;
 }

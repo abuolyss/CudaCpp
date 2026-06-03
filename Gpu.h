@@ -16,4 +16,22 @@ struct StackEntry
 	float nearT;
 };
 
+struct SurfaceHit
+{
+	int triangleIndex = -1;
+
+	float distance = FLT_MAX;
+
+	float barycentricU = 0.0f;
+	float barycentricV = 0.0f;
+};
+
+
+struct ShadingData
+{
+	Vertice3 hitPoint;
+	Vertice3 normal;
+	Vertice3 shadowRayOrigin;
+};
+
 
