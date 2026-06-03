@@ -52,5 +52,8 @@
     <CudaCompile Include="Gpu.cu">
       <Filter>Source Files</Filter>
     </CudaCompile>
+    <CudaCompile Include="lights.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
   </ItemGroup>
 </Project>

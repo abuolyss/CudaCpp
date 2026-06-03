@@ -7,13 +7,36 @@
 #include <cfloat>
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
+#include <stdio.h>
 
+__device__ int shadowRayCount = 0;
+__device__ int hitPixels = 0;
 
 __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWidth, int screenHeight, Vertice3 cameraPos, const TriangleSoA triangleSoA, BVHNode* gpuNodes, int* gpuTriIndices, int nodeCount, Vertice3 cameraForward, Vertice3 cameraRight, Vertice3 cameraUp);
 
 __device__ static bool HitsBVH(const BVHNode* gpuNodes, const int* gpuTriIndices, const TriangleSoA triangleSoA, Vertice3 cameraPos, Vertice3 invDir, Vertice3 dir, float maxDistance);
 
 __device__ static void TraverseBVH(const BVHNode* gpuNodes, const int* gpuTriIndices, const TriangleSoA triangleSoA, Vertice3 cameraPos, Vertice3 invDir, Vertice3 dir, float& closestDistance, int& closestTriangleIndex, float& outu, float& outv);
+
+void GetCudaStats(int& shadowRays, int& pixels)
+{
+	cudaMemcpyFromSymbol(
+		&shadowRays,
+		shadowRayCount,
+		sizeof(int));
+
+	cudaMemcpyFromSymbol(
+		&pixels,
+		hitPixels,
+		sizeof(int));
+}
+
+void ResetCudaStats()
+{
+	int zero = 0;
+	cudaMemcpyToSymbol(shadowRayCount, &zero, sizeof(int));
+	cudaMemcpyToSymbol(hitPixels, &zero, sizeof(int));
+}
 
 __host__ void LaunchRender(Uint32* framebuffer, int numTriangles, int screenWidth, int screenHeight, Vertice3 cameraPos, const TriangleSoA triangleSoA, BVHNode* gpuNodes, int* gpuTriIndices, int nodeCount, Vertice3 cameraForward, Vertice3 cameraRight, Vertice3 cameraUp)
 {
@@ -23,8 +46,9 @@ __host__ void LaunchRender(Uint32* framebuffer, int numTriangles, int screenWidt
 		(screenHeight + blockSize.y - 1) / blockSize.y
 	);
 	RenderScene << <gridSize, blockSize >> > (framebuffer, numTriangles, screenWidth, screenHeight, cameraPos, triangleSoA, gpuNodes, gpuTriIndices, nodeCount, cameraForward, cameraRight, cameraUp);
-
+	
 	cudaDeviceSynchronize();
+
 }
 
 /// <summary>
@@ -114,12 +138,15 @@ __device__ __forceinline__ bool HitAABB(Vertice3 rayOrigin, Vertice3 rayDir, AAB
 
 __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWidth, int screenHeight, Vertice3 cameraPos, const TriangleSoA triangleSoA, BVHNode* gpuNodes, int* gpuTriIndices, int nodeCount, Vertice3 cameraForward, Vertice3 cameraRight, Vertice3 cameraUp)
 {
+	
 
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
 
 	if (x >= screenWidth || y >= screenHeight)
 		return;
+
+
 
 	float viewportDistance = 1;
 	float viewportWidth = 1.7778;
@@ -155,6 +182,7 @@ __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWid
 	// if hit , then shoot shadow ray
 	if (closestTriangleIndex != -1)
 	{
+		atomicAdd(&hitPixels, 1);
 
 		float w = 1.0f - outu - outv;
 
@@ -181,89 +209,109 @@ __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWid
 		normalz *= invLength;
 
 
-		PointLight light;
-		light.position = Vertice3(6, 20, -1);
-		light.color = Vertice3(1, 1, 1);
-		light.intensity = 100.0f;
 		Vertice3 hitPoint = cameraPos + dir * closestDistance;
-		Vertice3 lightDir = light.position - hitPoint;
-		lightDir.NormalizeValue();
 
 
 
-		Vertice3 shadowOrigin =
-			Vertice3(hitPoint.x + normalx * 0.001f, hitPoint.y + normaly * 0.001f, hitPoint.z + normalz * 0.001f);
 
 
-		float lightDistance =
-			sqrtf(light.position.DistanceSquared(hitPoint));
 
-		Vertice3 shadowRayDirInv = lightDir.Reciprocal();
-		bool shadowed = HitsBVH(gpuNodes, gpuTriIndices, triangleSoA, shadowOrigin, shadowRayDirInv, lightDir, lightDistance);
-
-		if (shadowed )
+		if (normalx * -dir.x +
+			normaly * -dir.y +
+			normalz * -dir.z < 0.0f)
 		{
-			framebuffer[y * (int)screenWidth + x] = 0x030303FF;
-			//framebuffer[y * screenWidth + x] = 0xFF0000FF;
+			normalx = -normalx;
+			normaly = -normaly;
+			normalz = -normalz;
 		}
-		else
+		Vertice3 shadowOrigin = Vertice3(hitPoint.x + normalx * 0.001f, hitPoint.y + normaly * 0.001f, hitPoint.z + normalz * 0.001f);
+
+		float totalLightr = 0.0f;
+		float totalLightg = 0.0f;
+		float totalLightb = 0.0f;
+
+		for (int i = 0; i < gpuLightCount; i++)
 		{
 
+			const PointLightGPU& light = gpuLights[i];
+			float distanceSq = light.DistanceSquared(hitPoint);
+
+			if (light.intensity / distanceSq < 0.01f)
+				continue;
+
+			float maxRange = light.intensity;
+
+
+			if (distanceSq > maxRange * maxRange*2)
+				continue;
+			
+			Vertice3 lightDir(light.posx - hitPoint.x, light.posy - hitPoint.y, light.posz - hitPoint.z);
 
 
 
+			float lightDistance = sqrtf(distanceSq);
+
+			Vertice3 lightDirNormalized = Vertice3(lightDir.x / lightDistance, lightDir.y / lightDistance, lightDir.z / lightDistance);
+
+			Vertice3 shadowRayDirInv = lightDirNormalized.Reciprocal();
 
 
+			float NdotL = fmaxf((normalx * lightDirNormalized.x + normaly * lightDirNormalized.y + normalz * lightDirNormalized.z), 0.0f);
+			if (NdotL <= 0.0f)
+				continue;
 
+			float attenuation = 1.0f / distanceSq;
 
+			atomicAdd(&shadowRayCount, 1);
+			bool shadowed = HitsBVH(gpuNodes, gpuTriIndices, triangleSoA, shadowOrigin, shadowRayDirInv, lightDirNormalized, lightDistance);
 
+			if (!shadowed)
+			{
 
+				NdotL *= attenuation;
 
+				totalLightr += NdotL * light.intensity * light.colorx;
+				totalLightg += NdotL * light.intensity * light.colory;
+				totalLightb += NdotL * light.intensity * light.colorz;
 
-
-
-			float distanceSq =
-				light.position.DistanceSquared(hitPoint);
-
-			float attenuation =
-				1.0f / distanceSq;
-
-
-			float diffuse = fmaxf((normalx * lightDir.x + normaly * lightDir.y + normalz * lightDir.z), 0.0f);
-			diffuse *= attenuation;
-
-			Uint32 packed = triangleSoA.packedColor[closestTriangleIndex];
-
-			float r = ((packed >> 24) & 0xFF) / 255.0f;
-			float g = ((packed >> 16) & 0xFF) / 255.0f;
-			float b = ((packed >> 8) & 0xFF) / 255.0f;
-			float a = ((packed) & 0xFF) / 255.0f;
-
-			r *= light.color.x * diffuse * light.intensity;
-			g *= light.color.y * diffuse * light.intensity;
-			b *= light.color.z * diffuse * light.intensity;
-
-			r = fminf(r, 1.0f);
-			g = fminf(g, 1.0f);
-			b = fminf(b, 1.0f);
-
-			//Gamma correction below this
-			r = sqrtf(r);
-			g = sqrtf(g);
-			b = sqrtf(b);
-
-
-
-			framebuffer[y * (int)screenWidth + x] =
-				((Uint32)(r * 255.0f) << 24) |
-				((Uint32)(g * 255.0f) << 16) |
-				((Uint32)(b * 255.0f) << 8) |
-				0xFF;
-			//framebuffer[y * screenWidth + x] = 0x00FF00FF;
+			}
 		}
+
+		totalLightr = fminf(totalLightr, 1.0f);
+		totalLightg = fminf(totalLightg, 1.0f);
+		totalLightb = fminf(totalLightb, 1.0f);
+
+		Uint32 packed = triangleSoA.packedColor[closestTriangleIndex];
+
+		float r = ((packed >> 24) & 0xFF) / 255.0f;
+		float g = ((packed >> 16) & 0xFF) / 255.0f;
+		float b = ((packed >> 8) & 0xFF) / 255.0f;
+		//	float a = ((packed) & 0xFF) / 255.0f;
+
+		r *= totalLightr;
+		g *= totalLightg;
+		b *= totalLightb;
+
+		r = fminf(r, 1.0f);
+		g = fminf(g, 1.0f);
+		b = fminf(b, 1.0f);
+
+		//Gamma correction below this
+		r = sqrtf(r);
+		g = sqrtf(g);
+		b = sqrtf(b);
+
+
+		framebuffer[y * (int)screenWidth + x] =
+			((Uint32)(r * 255.0f) << 24) |
+			((Uint32)(g * 255.0f) << 16) |
+			((Uint32)(b * 255.0f) << 8) |
+			0xFF;
+
 	}
-	else {
-		framebuffer[y * (int)screenWidth + x] = 0x303030FF;
+	else
+	{
+		framebuffer[y * (int)screenWidth + x] = 0x000000FF;
 	}
 
 }
@@ -377,7 +425,7 @@ __device__ static bool HitsBVH(const BVHNode* gpuNodes, const int* gpuTriIndices
 		nodeIndex = entry.nodeIndex;
 		nodeNear = entry.nearT;
 
-		BVHNode node = gpuNodes[nodeIndex];
+		const BVHNode& node = gpuNodes[nodeIndex];
 
 		if (nodeNear > maxDistance)
 			continue;

@@ -75,7 +75,7 @@ static void ExpandAABB(AABB& dst, const AABB& src)
 struct SAHBin
 {
 	AABB bounds;
-	int count;
+	int count = 0;
 };
 
 static bool FindBestSplitSAH(

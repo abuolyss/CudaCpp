@@ -8,8 +8,13 @@
 #include "objImport.h"
 #include <SDL3/SDL_mouse.h>
 #include "BVH.h"
+#include <chrono>
 #include "SDLmanager.cpp"
 #include <windows.h>
+#include "lights.h"
+
+
+static void UploadLights(const std::vector<PointLight>& cpuLights);
 
 static void ConvertTriangles(const std::vector<Triangle>& triangles, TriangleSoA& triangleSoA);
 
@@ -21,7 +26,7 @@ static int BuildBVH(int Start, int End, std::vector<int>& triIndices, std::vecto
 
 static void GenerateBVH(TriangleSoA& triangleSoA, std::vector<BVHNode>& nodes, std::vector<int>& triIndices, int triangleCount);
 
-static void FPSCounter();
+static void FPSCounter(std::chrono::steady_clock::time_point start, std::chrono::nanoseconds gputime);
 
 static int screenWidth = 1920;
 static int screenHeight = 1080;
@@ -79,8 +84,76 @@ int main()
 
 	//std::cout << triangles.size() << std::endl;
 	//std::cout << nodes.size() << std::endl;
-	std::cout << "Waiting for profiler..." << std::endl;
-	Sleep(2000);
+	//std::cout << "Waiting for profiler..." << std::endl;
+	//Sleep(2000);
+
+	std::cout << "Setting up the lights." << std::endl;
+
+
+	std::vector<PointLight> cpuLights;
+
+	PointLight light1;
+	light1.position.x = 3.5;
+	light1.position.y = 6.5;
+	light1.position.z = 20.5;
+
+	light1.color.x = 1;
+	light1.color.y = 1;
+	light1.color.z = 1;
+
+	light1.intensity = 30;
+
+	cpuLights.push_back(light1);
+
+	PointLight light2;
+	light2.position.x = 3.5;
+	light2.position.y = 6.5;
+	light2.position.z = 43;
+
+	light2.color.x = 1;
+	light2.color.y = 1;
+	light2.color.z = 1;
+
+	light2.intensity = 30;
+
+	cpuLights.push_back(light2);
+
+	PointLight light3;
+	light3.position.x = 3.5;
+	light3.position.y = 6.5;
+	light3.position.z = -25;
+
+	light3.color.x = 1;
+	light3.color.y = 1;
+	light3.color.z = 1;
+
+	light3.intensity = 30;
+
+	cpuLights.push_back(light3);
+	PointLight light4;
+	light4.position.x = 15;
+	light4.position.y = 6.5;
+	light4.position.z = 43;
+
+	light4.color.x = 1;
+	light4.color.y = 1;
+	light4.color.z = 1;
+
+	light4.intensity = 30;
+
+	cpuLights.push_back(light4);
+
+	UploadLights(cpuLights);
+
+
+	//cudaMemcpyToSymbol(
+	//	gpuLights,
+	//	cpuLights,
+	//	sizeof(PointLight));
+
+	int shadowRayCount = 0;
+	int hitPixelCount = 0;
+
 
 	std::cout << "Starting the game loop." << std::endl;
 
@@ -101,6 +174,7 @@ int main()
 	SDL_Event event;
 	while (running)
 	{
+		auto start = std::chrono::high_resolution_clock::now();
 		while (SDL_PollEvent(&event))
 		{
 			if (event.type == SDL_EVENT_QUIT)
@@ -127,7 +201,6 @@ int main()
 		cameraUp = cameraForward.Cross(cameraRight);
 		cameraUp.NormalizeValue();
 
-		FPSCounter();
 
 		if (keys[SDL_SCANCODE_ESCAPE])
 		{
@@ -159,20 +232,33 @@ int main()
 		{
 			cameraPos.y -= speed;
 		}
-
-		//auto startg = std::chrono::high_resolution_clock::now();
+		ResetCudaStats();
+		auto startg = std::chrono::high_resolution_clock::now();
 		LaunchRender(gpuFramebuffer, triangles.size(), screenWidth, screenHeight, cameraPos, triangleSoA, gpuNodes, gpuTriIndices, nodes.size(), cameraForward, cameraRight, cameraUp);
-		//	std::cout<< "gpu + " << std::chrono::high_resolution_clock::now() - startg << std::endl;
+		auto gputime = std::chrono::high_resolution_clock::now() - startg;
 
-			//cudaDeviceSynchronize();
-			//cudaError_t err = cudaDeviceSynchronize();
+		GetCudaStats(shadowRayCount, hitPixelCount);
+		std::cout << "Shadow rays: "
+			<< shadowRayCount
+			<< ", Hit pixels: "
+			<< hitPixelCount
+			<< std::endl;
 
-			//std::cout << cudaGetErrorString(err);
-			//cudaError_t err;
-			//err = cudaGetLastError();
-			//std::cout << err;
+
+
+		//cudaDeviceSynchronize();
+		//cudaError_t err = cudaDeviceSynchronize();
+
+		//std::cout << cudaGetErrorString(err);
+		//cudaError_t err;
+		//err = cudaGetLastError();
+		//std::cout << err;
 
 		SDLRenderLoop(screenWidth, screenHeight, window, renderer, texture, cpuFramebuffer, gpuFramebuffer);
+
+
+		FPSCounter(start, gputime);
+
 	}
 
 	std::cout << "Program closed, freeing the memory." << std::endl << std::endl;
@@ -187,7 +273,7 @@ int main()
 	return 0;
 }
 
-static void FPSCounter()
+static void FPSCounter(std::chrono::steady_clock::time_point start, std::chrono::nanoseconds gputime)
 {
 	static int frames = 0;
 	static Uint64 lastTime = SDL_GetTicks();
@@ -197,6 +283,11 @@ static void FPSCounter()
 		std::cout << "FPS: " << frames << std::endl;
 		frames = 0;
 		lastTime = SDL_GetTicks();
+		std::cout << "Cuda time: " << gputime;
+		std::cout << ", CPU time: " << std::chrono::high_resolution_clock::now() - gputime - start << std::endl;
+
+
+
 	}
 }
 
@@ -330,3 +421,26 @@ static void ConvertTriangles(
 		cudaMemcpyHostToDevice);
 }
 
+static void UploadLights(const std::vector<PointLight>& cpuLights)
+{
+	std::vector<PointLightGPU> uploadLights;
+
+	for (const auto& light : cpuLights)
+	{
+		PointLightGPU gpu;
+
+		gpu.posx = light.position.x;
+		gpu.posy = light.position.y;
+		gpu.posz = light.position.z;
+
+		gpu.colorx = light.color.x;
+		gpu.colory = light.color.y;
+		gpu.colorz = light.color.z;
+
+		gpu.intensity = light.intensity;
+
+		uploadLights.push_back(gpu);
+	}
+
+	UploadLightsGPU(uploadLights.data(), uploadLights.size());
+}
