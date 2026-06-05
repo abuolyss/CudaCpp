@@ -4,10 +4,38 @@
 #include <cmath>
 #include <cuda_runtime.h>
 #include <math.h>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+
+struct Texture
+{
+	int width;
+	int height;
+	Uint32* pixels;
+};
 
 struct UV
 {
 	float u, v;
+};
+
+struct Material
+{
+	std::string name;
+
+	std::string diffuseTexture;
+
+	float emissive = 0.0f;
+	float roughness = 1.0f;
+	float opacity = 1.0f;
+};
+
+struct AssetData
+{
+	std::unordered_map<std::string, Material> materials;
+	std::vector<Texture> textures;
 };
 
 struct Vertice3
@@ -15,7 +43,7 @@ struct Vertice3
 	//coords for vector or vertices
 	float x, y, z;
 
-	UV uv0, uv1, uv2;
+
 
 	__host__ __device__ inline Vertice3() : x(0), y(0), z(0) {}
 
@@ -118,6 +146,7 @@ struct Triangle
 	Vertice3 nx, ny, nz;
 	Uint32 color;
 	Vertice3 N;
+	UV uv0, uv1, uv2;
 
 	__host__ __device__ inline Triangle(Vertice3 x = {}, Vertice3 y = {}, Vertice3 z = {}, Uint32 color = 0)
 		: x(x), y(y), z(z), color(color) {
@@ -155,6 +184,15 @@ struct TriangleSoA
 	float* N2x;
 	float* N2y;
 	float* N2z;
+
+	float* UV0u;
+	float* UV0v;
+
+	float* UV1u;
+	float* UV1v;
+
+	float* UV2u;
+	float* UV2v;
 
 	Uint32* packedColor;
 };

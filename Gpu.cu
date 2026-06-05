@@ -326,6 +326,31 @@ __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWid
 		b = sqrtf(b);
 
 
+		//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+		//! 
+		float baryU = hit.barycentricU;
+		float baryV = hit.barycentricV;
+		float baryW = 1.0f - baryU - baryV;
+		float hitU =
+			baryW * triangleSoA.UV0u[hit.triangleIndex] +
+			baryU * triangleSoA.UV1u[hit.triangleIndex] +
+			baryV * triangleSoA.UV2u[hit.triangleIndex];
+
+		float hitV =
+			baryW * triangleSoA.UV0v[hit.triangleIndex] +
+			baryU * triangleSoA.UV1v[hit.triangleIndex] +
+			baryV * triangleSoA.UV2v[hit.triangleIndex];
+		//! 
+		int checkX = (int)(hitU * 20);
+		int checkY = (int)(hitV * 20);
+
+		bool checker = ((checkX + checkY) & 1);
+
+		r = checker ? 1.0f : 0.0f;
+		g = checker ? 1.0f : 0.0f;
+		b = checker ? 1.0f : 0.0f;
+		//! !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 		framebuffer[y * (int)screenWidth + x] =
 			((Uint32)(r * 255.0f) << 24) |
 			((Uint32)(g * 255.0f) << 16) |

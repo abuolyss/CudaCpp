@@ -12,7 +12,10 @@
 #include "SDLmanager.h"
 #include <windows.h>
 #include "lights.h"
-#include "TextureReader.h"
+#include "MtlImport.h"
+#include <unordered_map>
+#include <string>
+
 
 
 static void UploadLights(const std::vector<PointLight>& cpuLights);
@@ -35,11 +38,47 @@ static int screenHeight = 1080;
 
 int main()
 {
-	LoadTexture();
+	AssetData assets = ReadMtlFile();
 
+	std::vector<Texture> gpuTextures;
+	gpuTextures.resize(assets.textures.size());
 
+	for (size_t i = 0; i < assets.textures.size(); i++)
+	{
+		gpuTextures[i].width =
+			assets.textures[i].width;
 
+		gpuTextures[i].height =
+			assets.textures[i].height;
 
+		size_t size =
+			assets.textures[i].width *
+			assets.textures[i].height *
+			sizeof(Uint32);
+
+		cudaMalloc(
+			&gpuTextures[i].pixels,
+			size);
+
+		cudaMemcpy(
+			gpuTextures[i].pixels,
+			assets.textures[i].pixels,
+			size,
+			cudaMemcpyHostToDevice);
+	}
+
+	Texture* gpuTextureTable;
+	cudaMalloc(
+		&gpuTextureTable,
+		gpuTextures.size() *
+		sizeof(Texture));
+
+	cudaMemcpy(
+		gpuTextureTable,
+		gpuTextures.data(),
+		gpuTextures.size() *
+		sizeof(Texture),
+		cudaMemcpyHostToDevice);
 
 
 	std::cout << "Program launched." << std::endl;
@@ -316,6 +355,15 @@ static void ConvertTriangles(
 	std::vector<float> N1x(count), N1y(count), N1z(count);
 	std::vector<float> N2x(count), N2y(count), N2z(count);
 
+	std::vector<float> UV0u(count);
+	std::vector<float> UV0v(count);
+
+	std::vector<float> UV1u(count);
+	std::vector<float> UV1v(count);
+
+	std::vector<float> UV2u(count);
+	std::vector<float> UV2v(count);
+
 	std::vector<Uint32> packedColor(count);
 
 	for (size_t i = 0; i < count; i++)
@@ -354,6 +402,15 @@ static void ConvertTriangles(
 		N2y[i] = tri.nz.y;
 		N2z[i] = tri.nz.z;
 
+		UV0u[i] = tri.uv0.u;
+		UV0v[i] = tri.uv0.v;
+
+		UV1u[i] = tri.uv1.u;
+		UV1v[i] = tri.uv1.v;
+
+		UV2u[i] = tri.uv2.u;
+		UV2v[i] = tri.uv2.v;
+
 		packedColor[i] = tri.color;
 	}
 
@@ -389,6 +446,15 @@ static void ConvertTriangles(
 	cudaMalloc(&triangleSoA.N2y, count * sizeof(float));
 	cudaMalloc(&triangleSoA.N2z, count * sizeof(float));
 
+	cudaMalloc(&triangleSoA.UV0u, count * sizeof(float));
+	cudaMalloc(&triangleSoA.UV0v, count * sizeof(float));
+
+	cudaMalloc(&triangleSoA.UV1u, count * sizeof(float));
+	cudaMalloc(&triangleSoA.UV1v, count * sizeof(float));
+
+	cudaMalloc(&triangleSoA.UV2u, count * sizeof(float));
+	cudaMalloc(&triangleSoA.UV2v, count * sizeof(float));
+
 	cudaMalloc(&triangleSoA.packedColor, count * sizeof(Uint32));
 
 	cudaMemcpy(triangleSoA.ax, ax.data(), count * sizeof(float), cudaMemcpyHostToDevice);
@@ -422,6 +488,15 @@ static void ConvertTriangles(
 	cudaMemcpy(triangleSoA.N2x, N2x.data(), count * sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(triangleSoA.N2y, N2y.data(), count * sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(triangleSoA.N2z, N2z.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	
+	cudaMemcpy(triangleSoA.UV0u, UV0u.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.UV0v, UV0v.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+
+	cudaMemcpy(triangleSoA.UV1u, UV1u.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.UV1v, UV1v.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+
+	cudaMemcpy(triangleSoA.UV2u, UV2u.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.UV2v, UV2v.data(), count * sizeof(float), cudaMemcpyHostToDevice);
 
 	cudaMemcpy(triangleSoA.packedColor,
 		packedColor.data(),

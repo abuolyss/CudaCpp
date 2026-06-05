@@ -13,6 +13,9 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Reader">
+      <UniqueIdentifier>{eaa848b0-5c01-4f5f-8247-038b9efd3f96}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="structs.h">
@@ -21,24 +24,21 @@
     <ClCompile Include="IDEAS.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="objImport.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="Program.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="SDLmanager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="TextureReader.cpp">
-      <Filter>Source Files</Filter>
+    <ClCompile Include="objImport.cpp">
+      <Filter>Reader</Filter>
+    </ClCompile>
+    <ClCompile Include="MtlImport.cpp">
+      <Filter>Reader</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Gpu.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="objImport.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="BVH.h">
@@ -50,8 +50,11 @@
     <ClInclude Include="SDLmanager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="TextureReader.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="MtlImport.h">
+      <Filter>Reader</Filter>
+    </ClInclude>
+    <ClInclude Include="objImport.h">
+      <Filter>Reader</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
