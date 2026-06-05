@@ -5,12 +5,17 @@
 #include <cuda_runtime.h>
 #include <math.h>
 
-
+struct UV
+{
+	float u, v;
+};
 
 struct Vertice3
 {
 	//coords for vector or vertices
 	float x, y, z;
+
+	UV uv0, uv1, uv2;
 
 	__host__ __device__ inline Vertice3() : x(0), y(0), z(0) {}
 
@@ -26,6 +31,11 @@ struct Vertice3
 	__host__ __device__ inline Vertice3 operator-(const Vertice3& other) const
 	{
 		return Vertice3(x - other.x, y - other.y, z - other.z);
+	}
+
+	__host__ __device__	inline Vertice3 operator-() const
+	{
+		return Vertice3(-x, -y, -z);
 	}
 
 	__host__ __device__ inline Vertice3 operator*(float scalar) const
@@ -47,7 +57,7 @@ struct Vertice3
 		z -= other.z;
 	}
 
-	__host__ __device__ inline float operator*(const Vertice3& other) const
+	__host__ __device__ inline float Dot(const Vertice3& other) const
 	{
 		return fmaf(z, other.z, fmaf(y, other.y, x * other.x));
 	}

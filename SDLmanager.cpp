@@ -2,7 +2,7 @@
 #include "SDLmanager.h"
 #include <cuda_runtime.h>
 
-static void SDLInitialize(int screenWidth, int screenHeight, SDL_Window** window, SDL_Renderer** renderer, SDL_Texture** texture)
+ void SDLInitialize(int screenWidth, int screenHeight, SDL_Window** window, SDL_Renderer** renderer, SDL_Texture** texture)
 {
 	SDL_Init(SDL_INIT_VIDEO);
 	*window = SDL_CreateWindow("Render RayTrace", (int)screenWidth, (int)screenHeight, 0);
@@ -11,7 +11,7 @@ static void SDLInitialize(int screenWidth, int screenHeight, SDL_Window** window
 	SDL_DEFINE_PIXELFORMAT(SDL_PIXELTYPE_PACKED32, SDL_PACKEDORDER_RGBA, SDL_PACKEDLAYOUT_8888, 32, 4);
 }
 
-static void SDLRenderLoop(int screenWidth, int screenHeight, SDL_Window* window, SDL_Renderer* renderer, SDL_Texture* texture, Uint32* cpuFramebuffer, Uint32* gpuFramebuffer)
+void SDLRenderLoop(int screenWidth, int screenHeight, SDL_Window* window, SDL_Renderer* renderer, SDL_Texture* texture, Uint32* cpuFramebuffer, Uint32* gpuFramebuffer)
 {
 	cudaMemcpy(cpuFramebuffer, gpuFramebuffer, screenWidth * screenHeight * sizeof(Uint32), cudaMemcpyDeviceToHost);
 	SDL_UpdateTexture(texture, NULL, cpuFramebuffer, (int)screenWidth * sizeof(Uint32));

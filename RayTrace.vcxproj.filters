@@ -30,6 +30,9 @@
     <ClCompile Include="SDLmanager.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="TextureReader.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Gpu.h">
@@ -47,9 +50,15 @@
     <ClInclude Include="SDLmanager.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="TextureReader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="Gpu.cu">
+      <Filter>Source Files</Filter>
+    </CudaCompile>
+    <CudaCompile Include="lights.cu">
       <Filter>Source Files</Filter>
     </CudaCompile>
   </ItemGroup>
