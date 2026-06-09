@@ -1,14 +1,14 @@
-#include "objImport.h"
 #include "Structs.h"
-#include <fstream>
-#include <string>
-#include <sstream>
-#include <vector>
-#include <iostream>
+#include "objImport.h"
 #include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
 
 
-void ReadObjFile( std::vector<Triangle>& triangles, Uint8 red, Uint8 green, Uint8 blue)
+void ReadObjFile(std::vector<Triangle>& triangles, AssetData& assetData, Uint8 red, Uint8 green, Uint8 blue)
 {
 	std::cout << "Starting the read of .Obj file." << std::endl;
 
@@ -25,7 +25,7 @@ void ReadObjFile( std::vector<Triangle>& triangles, Uint8 red, Uint8 green, Uint
 	std::vector<Vertice3> vertices;
 	std::vector<Vertice3> normals;
 	std::vector<UV> uvs;
-	std::string currentMaterial;
+	std::string currentMaterialName;
 
 	float x, y, z;
 	int a, b, c;
@@ -33,40 +33,40 @@ void ReadObjFile( std::vector<Triangle>& triangles, Uint8 red, Uint8 green, Uint
 	size_t trianglesWithUV = 0;
 
 
-auto ParseVertexIndex = [](const std::string& s)
-{
-    return std::stoi(s.substr(0, s.find('/')));
-};
+	auto ParseVertexIndex = [](const std::string& s)
+		{
+			return std::stoi(s.substr(0, s.find('/')));
+		};
 
-auto ParseNormalIndex = [](const std::string& s)
-{
-    size_t first = s.find('/');
-    if (first == std::string::npos)
-        return -1;
+	auto ParseNormalIndex = [](const std::string& s)
+		{
+			size_t first = s.find('/');
+			if (first == std::string::npos)
+				return -1;
 
-    size_t second = s.find('/', first + 1);
-    if (second == std::string::npos)
-        return -1;
+			size_t second = s.find('/', first + 1);
+			if (second == std::string::npos)
+				return -1;
 
-    return std::stoi(s.substr(second + 1));
-};
+			return std::stoi(s.substr(second + 1));
+		};
 
-auto ParseUVIndex = [](const std::string& s)
-	{
-		size_t first = s.find('/');
+	auto ParseUVIndex = [](const std::string& s)
+		{
+			size_t first = s.find('/');
 
-		if (first == std::string::npos)
-			return -1;
+			if (first == std::string::npos)
+				return -1;
 
-		size_t second = s.find('/', first + 1);
+			size_t second = s.find('/', first + 1);
 
-		if (second == first + 1)
-			return -1;
+			if (second == first + 1)
+				return -1;
 
-		return std::stoi(
-			s.substr(first + 1, second - first - 1)
-		);
-	};
+			return std::stoi(
+				s.substr(first + 1, second - first - 1)
+			);
+		};
 
 	while (std::getline(Read, Line)) {
 
@@ -99,7 +99,7 @@ auto ParseUVIndex = [](const std::string& s)
 		}
 		else if (type == "usemtl")
 		{
-			ss >> currentMaterial;
+			ss >> currentMaterialName;
 		}
 
 		else if (type == "f")
@@ -142,9 +142,11 @@ auto ParseUVIndex = [](const std::string& s)
 				tri.uv2 = uvs[uv2 - 1];
 			}
 
+			tri.materialId = assetData.materialIds[currentMaterialName];
+
 			triangles.push_back(tri);
 		}
-	} 
+	}
 	std::cout << "Read is done." << std::endl;
 
 	std::cout << "Vertices: " << vertices.size() << std::endl;

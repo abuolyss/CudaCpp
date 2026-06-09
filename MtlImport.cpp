@@ -12,8 +12,10 @@ Texture LoadTexture(std::filesystem::path texturePath);
 
 AssetData ReadMtlFile()
 {
-	AssetData assetData;
+
 	std::cout << "Starting the read of .mtl file." << std::endl;
+	AssetData assetData;
+	std::unordered_map<std::string, int> textureIds;
 
 	std::ifstream Read("Assets/Level1/Level1.mtl");
 
@@ -40,50 +42,53 @@ AssetData ReadMtlFile()
 		{
 			ss >> currentMaterialName;
 
-			materials[currentMaterialName] =
-				Material();
+			Material material{};
 
-			materials[currentMaterialName].name =
-				currentMaterialName;
+			assetData.materialIds[currentMaterialName] =
+				assetData.materialList.size();
+
+			assetData.materialList.push_back(material);
 		}
 		else if (type == "map_Kd")
 		{
-			std::getline(ss >> std::ws, materials[currentMaterialName].diffuseTexture);
+			std::string texturePath;
+			std::getline(ss >> std::ws, texturePath);
+
+			int textureIndex;
+
+			auto it = textureIds.find(texturePath);
+
+			if (it == textureIds.end())
+			{
+				textureIndex =
+					assetData.textures.size();
+
+				textureIds[texturePath] =
+					textureIndex;
+
+				std::filesystem::path fullPath =
+					std::filesystem::path("Assets/Level1") /
+					texturePath;
+
+				assetData.textures.push_back(
+					LoadTexture(fullPath));
+			}
+			else
+			{
+				textureIndex = it->second;
+			}
+
+			int materialId =
+				assetData.materialIds[currentMaterialName];
+
+			assetData.materialList[materialId]
+				.textureId = textureIndex;
 		}
 
-
-
 	}
-
-	std::vector<Texture> textures;
-	std::unordered_map<std::string, int> textureIds;
-
-
-	for (auto& [name, material] : materials)
-	{
-		if (material.diffuseTexture.empty())
-			continue;
-
-		if (textureIds.contains(material.diffuseTexture))
-			continue;
-
-		textureIds[material.diffuseTexture] =
-			textures.size();
-
-		std::filesystem::path fullPath =
-			std::filesystem::path("Assets/Level1") /
-			material.diffuseTexture;
-		textures.push_back(
-			LoadTexture(fullPath));
-	}
-
-	assetData.materials = materials;
-	assetData.textures = textures;
-
 	std::cout << "Read is done." << std::endl;
 	return assetData;
 }
-
 
 
 Texture LoadTexture(std::filesystem::path texturePath)

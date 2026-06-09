@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <algorithm>
 
 
 struct Texture
@@ -16,6 +17,8 @@ struct Texture
 	Uint32* pixels;
 };
 
+
+
 struct UV
 {
 	float u, v;
@@ -23,9 +26,7 @@ struct UV
 
 struct Material
 {
-	std::string name;
-
-	std::string diffuseTexture;
+	int textureId = -1;
 
 	float emissive = 0.0f;
 	float roughness = 1.0f;
@@ -34,7 +35,9 @@ struct Material
 
 struct AssetData
 {
-	std::unordered_map<std::string, Material> materials;
+	std::unordered_map<std::string, int> materialIds;
+	std::vector<Material> materialList;
+
 	std::vector<Texture> textures;
 };
 
@@ -148,6 +151,8 @@ struct Triangle
 	Vertice3 N;
 	UV uv0, uv1, uv2;
 
+	uint8_t materialId;
+
 	__host__ __device__ inline Triangle(Vertice3 x = {}, Vertice3 y = {}, Vertice3 z = {}, Uint32 color = 0)
 		: x(x), y(y), z(z), color(color) {
 		N = (y - x).Cross(z - x);
@@ -193,6 +198,8 @@ struct TriangleSoA
 
 	float* UV2u;
 	float* UV2v;
+
+	uint8_t* materialId;
 
 	Uint32* packedColor;
 };
