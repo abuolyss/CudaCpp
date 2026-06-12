@@ -1,18 +1,20 @@
-#include <SDL3/SDL.h>
-//#include <cmath>
-#include "Structs.h"
-#include <vector>
-#include <iostream>
-#include <cuda_runtime.h>
-#include "Gpu.h"
-#include "objImport.h"
-#include <SDL3/SDL_mouse.h>
 #include "BVH.h"
-#include <chrono>
+#include "Gpu.h"
+#include "MtlImport.h"
 #include "SDLmanager.h"
-#include <windows.h>
+#include "Structs.h"
 #include "lights.h"
-#include "TextureReader.h"
+#include "objImport.h"
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_mouse.h>
+#include <chrono>
+#include <cuda_runtime.h>
+#include <iostream>
+#include <string>
+#include <unordered_map>
+#include <vector>
+#include <windows.h>
+
 
 
 static void UploadLights(const std::vector<PointLight>& cpuLights);
@@ -29,17 +31,15 @@ static void GenerateBVH(TriangleSoA& triangleSoA, std::vector<BVHNode>& nodes, s
 
 static void FPSCounter(std::chrono::steady_clock::time_point start, std::chrono::nanoseconds gputime);
 
+static void ReadAssets(AssetData& assetData, Texture*& gpuTextureTable, Material*& gpuMaterialTable);
+
+
 static int screenWidth = 1920;
 static int screenHeight = 1080;
 
 
 int main()
 {
-	LoadTexture();
-
-
-
-
 
 
 	std::cout << "Program launched." << std::endl;
@@ -58,12 +58,29 @@ int main()
 
 
 
+	std::cout << "Reading assets." << std::endl;
+	AssetData assetData;
+
+	Texture* gpuTextureTable = nullptr;
+	Material* gpuMaterialTable = nullptr;
+
+	ReadAssets(assetData, gpuTextureTable, gpuMaterialTable);
+
+
 	std::cout << "Reading triangle .Obj file." << std::endl;
 	std::vector<Triangle> triangles;
-	ReadObjFile(triangles, 192, 192, 192);
-	//ReadObjFile(triangles, 255, 20, 147);
 
+	ReadObjFile(triangles, assetData, 192, 192, 192);
 
+	for (int i = 0; i < assetData.textures.size(); i++)
+	{
+		std::cout
+			<< i << " "
+			<< assetData.textures[i].width
+			<< "x"
+			<< assetData.textures[i].height
+			<< '\n';
+	}
 
 
 	std::cout << "Creating the BVH data." << std::endl;
@@ -242,7 +259,7 @@ int main()
 		}
 		ResetCudaStats();
 		auto startg = std::chrono::high_resolution_clock::now();
-		LaunchRender(gpuFramebuffer, triangles.size(), screenWidth, screenHeight, cameraPos, triangleSoA, gpuNodes, gpuTriIndices, nodes.size(), cameraForward, cameraRight, cameraUp);
+		LaunchRender(gpuFramebuffer, triangles.size(), screenWidth, screenHeight, cameraPos, triangleSoA, gpuNodes, gpuTriIndices, nodes.size(), cameraForward, cameraRight, cameraUp, gpuMaterialTable, gpuTextureTable);
 		auto gputime = std::chrono::high_resolution_clock::now() - startg;
 
 		GetCudaStats(shadowRayCount, hitPixelCount);
@@ -251,8 +268,6 @@ int main()
 			<< ", Hit pixels: "
 			<< hitPixelCount
 			<< std::endl;
-
-
 
 		//cudaDeviceSynchronize();
 		//cudaError_t err = cudaDeviceSynchronize();
@@ -316,6 +331,17 @@ static void ConvertTriangles(
 	std::vector<float> N1x(count), N1y(count), N1z(count);
 	std::vector<float> N2x(count), N2y(count), N2z(count);
 
+	std::vector<float> UV0u(count);
+	std::vector<float> UV0v(count);
+
+	std::vector<float> UV1u(count);
+	std::vector<float> UV1v(count);
+
+	std::vector<float> UV2u(count);
+	std::vector<float> UV2v(count);
+
+	std::vector<uint8_t> materialId(count);
+
 	std::vector<Uint32> packedColor(count);
 
 	for (size_t i = 0; i < count; i++)
@@ -354,6 +380,17 @@ static void ConvertTriangles(
 		N2y[i] = tri.nz.y;
 		N2z[i] = tri.nz.z;
 
+		UV0u[i] = tri.uv0.u;
+		UV0v[i] = tri.uv0.v;
+
+		UV1u[i] = tri.uv1.u;
+		UV1v[i] = tri.uv1.v;
+
+		UV2u[i] = tri.uv2.u;
+		UV2v[i] = tri.uv2.v;
+
+		materialId[i] = tri.materialId;
+
 		packedColor[i] = tri.color;
 	}
 
@@ -389,6 +426,17 @@ static void ConvertTriangles(
 	cudaMalloc(&triangleSoA.N2y, count * sizeof(float));
 	cudaMalloc(&triangleSoA.N2z, count * sizeof(float));
 
+	cudaMalloc(&triangleSoA.UV0u, count * sizeof(float));
+	cudaMalloc(&triangleSoA.UV0v, count * sizeof(float));
+
+	cudaMalloc(&triangleSoA.UV1u, count * sizeof(float));
+	cudaMalloc(&triangleSoA.UV1v, count * sizeof(float));
+
+	cudaMalloc(&triangleSoA.UV2u, count * sizeof(float));
+	cudaMalloc(&triangleSoA.UV2v, count * sizeof(float));
+
+	cudaMalloc(&triangleSoA.materialId, count * sizeof(uint8_t));
+
 	cudaMalloc(&triangleSoA.packedColor, count * sizeof(Uint32));
 
 	cudaMemcpy(triangleSoA.ax, ax.data(), count * sizeof(float), cudaMemcpyHostToDevice);
@@ -423,6 +471,17 @@ static void ConvertTriangles(
 	cudaMemcpy(triangleSoA.N2y, N2y.data(), count * sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(triangleSoA.N2z, N2z.data(), count * sizeof(float), cudaMemcpyHostToDevice);
 
+	cudaMemcpy(triangleSoA.UV0u, UV0u.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.UV0v, UV0v.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+
+	cudaMemcpy(triangleSoA.UV1u, UV1u.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.UV1v, UV1v.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+
+	cudaMemcpy(triangleSoA.UV2u, UV2u.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(triangleSoA.UV2v, UV2v.data(), count * sizeof(float), cudaMemcpyHostToDevice);
+
+	cudaMemcpy(triangleSoA.materialId, materialId.data(), count * sizeof(uint8_t), cudaMemcpyHostToDevice);
+
 	cudaMemcpy(triangleSoA.packedColor,
 		packedColor.data(),
 		count * sizeof(Uint32),
@@ -451,4 +510,65 @@ static void UploadLights(const std::vector<PointLight>& cpuLights)
 	}
 
 	UploadLightsGPU(uploadLights.data(), uploadLights.size());
+}
+
+static void ReadAssets(AssetData& assetData, Texture*& gpuTextureTable, Material*& gpuMaterialTable)
+{
+	assetData = ReadMtlFile();
+
+
+
+	// Build CPU texture table that contains GPU pixel pointers
+	std::vector<Texture> gpuTextures;
+	gpuTextures.resize(assetData.textures.size());
+
+	for (size_t i = 0; i < assetData.textures.size(); i++)
+	{
+		gpuTextures[i].width =
+			assetData.textures[i].width;
+
+		gpuTextures[i].height =
+			assetData.textures[i].height;
+
+		size_t size =
+			assetData.textures[i].width *
+			assetData.textures[i].height *
+			sizeof(Uint32);
+
+		cudaMalloc(
+			&gpuTextures[i].pixels,
+			size);
+
+		cudaMemcpy(
+			gpuTextures[i].pixels,
+			assetData.textures[i].pixels,
+			size,
+			cudaMemcpyHostToDevice);
+	}
+
+	// Upload texture table
+	cudaMalloc(
+		&gpuTextureTable,
+		gpuTextures.size() *
+		sizeof(Texture));
+
+	cudaMemcpy(
+		gpuTextureTable,
+		gpuTextures.data(),
+		gpuTextures.size() *
+		sizeof(Texture),
+		cudaMemcpyHostToDevice);
+
+	// Upload materials
+	cudaMalloc(
+		&gpuMaterialTable,
+		assetData.materialList.size() *
+		sizeof(Material));
+
+	cudaMemcpy(
+		gpuMaterialTable,
+		assetData.materialList.data(),
+		assetData.materialList.size() *
+		sizeof(Material),
+		cudaMemcpyHostToDevice);
 }

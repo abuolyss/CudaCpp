@@ -12,7 +12,7 @@
 __device__ int shadowRayCount = 0;
 __device__ int hitPixels = 0;
 
-__global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWidth, int screenHeight, Vertice3 cameraPos, const TriangleSoA triangleSoA, BVHNode* gpuNodes, int* gpuTriIndices, int nodeCount, Vertice3 cameraForward, Vertice3 cameraRight, Vertice3 cameraUp);
+__global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWidth, int screenHeight, Vertice3 cameraPos, const TriangleSoA triangleSoA, BVHNode* gpuNodes, int* gpuTriIndices, int nodeCount, Vertice3 cameraForward, Vertice3 cameraRight, Vertice3 cameraUp, Material* gpuMaterials, Texture* gpuTextures);
 
 __device__ static bool HitsBVH(const BVHNode* gpuNodes, const int* gpuTriIndices, const TriangleSoA triangleSoA, Vertice3 cameraPos, Vertice3 invDir, Vertice3 dir, float maxDistance);
 
@@ -40,14 +40,14 @@ void ResetCudaStats()
 	cudaMemcpyToSymbol(hitPixels, &zero, sizeof(int));
 }
 
-__host__ void LaunchRender(Uint32* framebuffer, int numTriangles, int screenWidth, int screenHeight, Vertice3 cameraPos, const TriangleSoA triangleSoA, BVHNode* gpuNodes, int* gpuTriIndices, int nodeCount, Vertice3 cameraForward, Vertice3 cameraRight, Vertice3 cameraUp)
+__host__ void LaunchRender(Uint32* framebuffer, int numTriangles, int screenWidth, int screenHeight, Vertice3 cameraPos, const TriangleSoA triangleSoA, BVHNode* gpuNodes, int* gpuTriIndices, int nodeCount, Vertice3 cameraForward, Vertice3 cameraRight, Vertice3 cameraUp, Material* gpuMaterials, Texture* gpuTextures)
 {
 	dim3 blockSize(8, 8);
 	dim3 gridSize(
 		(screenWidth + blockSize.x - 1) / blockSize.x,
 		(screenHeight + blockSize.y - 1) / blockSize.y
 	);
-	RenderScene << <gridSize, blockSize >> > (framebuffer, numTriangles, screenWidth, screenHeight, cameraPos, triangleSoA, gpuNodes, gpuTriIndices, nodeCount, cameraForward, cameraRight, cameraUp);
+	RenderScene << <gridSize, blockSize >> > (framebuffer, numTriangles, screenWidth, screenHeight, cameraPos, triangleSoA, gpuNodes, gpuTriIndices, nodeCount, cameraForward, cameraRight, cameraUp, gpuMaterials, gpuTextures);
 
 	cudaDeviceSynchronize();
 
@@ -138,7 +138,7 @@ __device__ __forceinline__ bool HitAABB(Vertice3 rayOrigin, Vertice3 rayDir, AAB
 	return (tmax >= tmin && tmax > 0.0f);
 }
 
-__global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWidth, int screenHeight, Vertice3 cameraPos, const TriangleSoA triangleSoA, BVHNode* gpuNodes, int* gpuTriIndices, int nodeCount, Vertice3 cameraForward, Vertice3 cameraRight, Vertice3 cameraUp)
+__global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWidth, int screenHeight, Vertice3 cameraPos, const TriangleSoA triangleSoA, BVHNode* gpuNodes, int* gpuTriIndices, int nodeCount, Vertice3 cameraForward, Vertice3 cameraRight, Vertice3 cameraUp, Material* gpuMaterials, Texture* gpuTextures)
 {
 
 
@@ -276,62 +276,130 @@ __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWid
 
 			atomicAdd(&shadowRayCount, 1);
 
-			bool shadowed =
-				HitsBVH(
-					gpuNodes,
-					gpuTriIndices,
-					triangleSoA,
-					shading.shadowRayOrigin,
-					shadowRayDirInv,
-					lightDirNormalized,
-					lightDistance);
+			////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+			//bool shadowed = HitsBVH(gpuNodes, gpuTriIndices, triangleSoA, shading.shadowRayOrigin, shadowRayDirInv, lightDirNormalized, lightDistance);
+
+			//if (!shadowed)
+			//{
+			//	NdotL *= attenuation;
+
+			//	totalLightr +=
+			//		NdotL * light.intensity * light.colorx;
+
+			//	totalLightg +=
+			//		NdotL * light.intensity * light.colory;
+
+			//	totalLightb +=
+			//		NdotL * light.intensity * light.colorz;
+			//}
+			float shadowHitDistance = lightDistance;
+			int shadowHitTriangleIndex = -1;
+			float shadowU = 0.0f;
+			float shadowV = 0.0f;
+
+			TraverseBVH(
+				gpuNodes,
+				gpuTriIndices,
+				triangleSoA,
+				shading.shadowRayOrigin,
+				shadowRayDirInv,
+				lightDirNormalized,
+				shadowHitDistance,
+				shadowHitTriangleIndex,
+				shadowU,
+				shadowV);
+
+			bool shadowed = shadowHitTriangleIndex != -1 && shadowHitDistance <= lightDistance;
 
 			if (!shadowed)
 			{
 				NdotL *= attenuation;
 
-				totalLightr +=
-					NdotL * light.intensity * light.colorx;
-
-				totalLightg +=
-					NdotL * light.intensity * light.colory;
-
-				totalLightb +=
-					NdotL * light.intensity * light.colorz;
+				totalLightr += NdotL * light.intensity * light.colorx;
+				totalLightg += NdotL * light.intensity * light.colory;
+				totalLightb += NdotL * light.intensity * light.colorz;
 			}
+			//////////////////////////////////////////////////////////////////////////////////////////////////////////
 		}
 
 		totalLightr = fminf(totalLightr, 1.0f);
 		totalLightg = fminf(totalLightg, 1.0f);
 		totalLightb = fminf(totalLightb, 1.0f);
 
-		Uint32 packed = triangleSoA.packedColor[closestTriangleIndex];
 
-		float r = ((packed >> 24) & 0xFF) / 255.0f;
-		float g = ((packed >> 16) & 0xFF) / 255.0f;
-		float b = ((packed >> 8) & 0xFF) / 255.0f;
+
 		//	float a = ((packed) & 0xFF) / 255.0f;
 
-		r *= totalLightr;
-		g *= totalLightg;
-		b *= totalLightb;
-
-		r = fminf(r, 1.0f);
-		g = fminf(g, 1.0f);
-		b = fminf(b, 1.0f);
-
-		//Gamma correction below this
-		r = sqrtf(r);
-		g = sqrtf(g);
-		b = sqrtf(b);
+		float r = totalLightr;
+		float g = totalLightg;
+		float b = totalLightb;
 
 
-		framebuffer[y * (int)screenWidth + x] =
-			((Uint32)(r * 255.0f) << 24) |
-			((Uint32)(g * 255.0f) << 16) |
-			((Uint32)(b * 255.0f) << 8) |
-			0xFF;
+		float baryU = hit.barycentricU;
+		float baryV = hit.barycentricV;
+		float baryW = 1.0f - baryU - baryV;
+		float hitU =
+			baryW * triangleSoA.UV0u[hit.triangleIndex] +
+			baryU * triangleSoA.UV1u[hit.triangleIndex] +
+			baryV * triangleSoA.UV2u[hit.triangleIndex];
 
+		float hitV =
+			baryW * triangleSoA.UV0v[hit.triangleIndex] +
+			baryU * triangleSoA.UV1v[hit.triangleIndex] +
+			baryV * triangleSoA.UV2v[hit.triangleIndex];
+
+
+		Material hitMaterial = gpuMaterials[triangleSoA.materialId[hit.triangleIndex]];
+		if (hitMaterial.textureId < 0) //no texture, use vertex color
+		{
+			Uint32 packed = triangleSoA.packedColor[closestTriangleIndex];
+			r *= ((packed >> 24) & 0xFF) / 255.0f;
+			g *= ((packed >> 16) & 0xFF) / 255.0f;
+			b *= ((packed >> 8) & 0xFF) / 255.0f;
+
+			r = fminf(r, 1.0f);
+			g = fminf(g, 1.0f);
+			b = fminf(b, 1.0f);
+
+			//Gamma correction below this
+			r = sqrtf(r);
+			g = sqrtf(g);
+			b = sqrtf(b);
+
+			framebuffer[y * (int)screenWidth + x] =
+				((Uint32)(r * 255.0f) << 24) |
+				((Uint32)(g * 255.0f) << 16) |
+				((Uint32)(b * 255.0f) << 8) |
+				0xFF;
+
+		}
+		else //texture sampling
+		{
+			Uint32 sampledColor = SampleTexture(gpuTextures[hitMaterial.textureId], hitU, hitV);
+
+			r *= ((sampledColor >> 24) & 0xFF) / 255.0f;
+			g *= ((sampledColor >> 16) & 0xFF) / 255.0f;
+			b *= ((sampledColor >> 8) & 0xFF) / 255.0f;
+
+			r = fminf(r, 1.0f);
+			g = fminf(g, 1.0f);
+			b = fminf(b, 1.0f);
+
+			//Gamma correction below this
+			r = sqrtf(r);
+			g = sqrtf(g);
+			b = sqrtf(b);
+
+
+			framebuffer[y * (int)screenWidth + x] =
+				((Uint32)(r * 255.0f) << 24) |
+				((Uint32)(g * 255.0f) << 16) |
+				((Uint32)(b * 255.0f) << 8) |
+				0xFF;
+		}
 	}
 	else
 	{
@@ -511,10 +579,6 @@ __device__ static bool HitsBVH(const BVHNode* gpuNodes, const int* gpuTriIndices
 					{
 
 						return true;
-						//outu = uu;
-						//outv = vv;
-						//closestDistance = intersectionPoint;
-						//closestTriangleIndex = triIndex;
 					}
 				}
 			}
@@ -568,4 +632,22 @@ __device__ __forceinline__ ShadingData BuildShadingData(
 		result.normal * 0.001f;
 
 	return result;
+}
+
+
+__device__ inline Uint32 SampleTexture(const Texture& texture, float u, float v)
+{
+	u = u - floorf(u);
+	v = v - floorf(v);
+
+	int x = (int)(u * texture.width);
+	int y = (int)((1.0f - v) * texture.height);
+
+	if (x >= texture.width)
+		x = texture.width - 1;
+	if (y >= texture.height)
+		y = texture.height - 1;
+
+	return texture.pixels[
+		y * texture.width + x];
 }

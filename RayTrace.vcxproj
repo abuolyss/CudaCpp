@@ -161,7 +161,7 @@
     <ClCompile Include="Program.cpp" />
     <ClCompile Include="SDLmanager.cpp" />
     <ClCompile Include="structs.h" />
-    <ClCompile Include="TextureReader.cpp" />
+    <ClCompile Include="MtlImport.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="BVH.h" />
@@ -169,7 +169,7 @@
     <ClInclude Include="lights.h" />
     <ClInclude Include="objImport.h" />
     <ClInclude Include="SDLmanager.h" />
-    <ClInclude Include="TextureReader.h" />
+    <ClInclude Include="MtlImport.h" />
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="Gpu.cu">
