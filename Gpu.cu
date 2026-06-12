@@ -276,29 +276,53 @@ __global__ void RenderScene(Uint32* framebuffer, int numTriangles, int screenWid
 
 			atomicAdd(&shadowRayCount, 1);
 
-			bool shadowed =
-				HitsBVH(
-					gpuNodes,
-					gpuTriIndices,
-					triangleSoA,
-					shading.shadowRayOrigin,
-					shadowRayDirInv,
-					lightDirNormalized,
-					lightDistance);
+			////////////////////////////////////////////////////////////////////////////////////////////
+
+
+
+			//bool shadowed = HitsBVH(gpuNodes, gpuTriIndices, triangleSoA, shading.shadowRayOrigin, shadowRayDirInv, lightDirNormalized, lightDistance);
+
+			//if (!shadowed)
+			//{
+			//	NdotL *= attenuation;
+
+			//	totalLightr +=
+			//		NdotL * light.intensity * light.colorx;
+
+			//	totalLightg +=
+			//		NdotL * light.intensity * light.colory;
+
+			//	totalLightb +=
+			//		NdotL * light.intensity * light.colorz;
+			//}
+			float shadowHitDistance = lightDistance;
+			int shadowHitTriangleIndex = -1;
+			float shadowU = 0.0f;
+			float shadowV = 0.0f;
+
+			TraverseBVH(
+				gpuNodes,
+				gpuTriIndices,
+				triangleSoA,
+				shading.shadowRayOrigin,
+				shadowRayDirInv,
+				lightDirNormalized,
+				shadowHitDistance,
+				shadowHitTriangleIndex,
+				shadowU,
+				shadowV);
+
+			bool shadowed = shadowHitTriangleIndex != -1 && shadowHitDistance <= lightDistance;
 
 			if (!shadowed)
 			{
 				NdotL *= attenuation;
 
-				totalLightr +=
-					NdotL * light.intensity * light.colorx;
-
-				totalLightg +=
-					NdotL * light.intensity * light.colory;
-
-				totalLightb +=
-					NdotL * light.intensity * light.colorz;
+				totalLightr += NdotL * light.intensity * light.colorx;
+				totalLightg += NdotL * light.intensity * light.colory;
+				totalLightb += NdotL * light.intensity * light.colorz;
 			}
+			//////////////////////////////////////////////////////////////////////////////////////////////////////////
 		}
 
 		totalLightr = fminf(totalLightr, 1.0f);
@@ -555,10 +579,6 @@ __device__ static bool HitsBVH(const BVHNode* gpuNodes, const int* gpuTriIndices
 					{
 
 						return true;
-						//outu = uu;
-						//outv = vv;
-						//closestDistance = intersectionPoint;
-						//closestTriangleIndex = triIndex;
 					}
 				}
 			}
